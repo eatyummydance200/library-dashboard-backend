@@ -55,7 +55,7 @@ try:
             'name': 'library-dashboard', 'image': 'ghcr.io/eatyummydance200/library-dashboard:main',
             'hostPort': 8090, 'containerPort': 8000, 'bindAddress': '127.0.0.1',
             'healthPath': '/library-dashboard/healthz', 'url': host + '/library-dashboard/',
-            'github': 'https://github.com/eatyummydance200/library-dashboard',
+            'github': 'https://github.com/eatyummydance200/library-dashboard-backend',
             'env': settings, 'volumes': [{'name': 'data', 'target': '/app/data'}],
         }
         app_id = write('/apps', spec)['id']
