@@ -1,17 +1,17 @@
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /build
-COPY pom.xml ./
-RUN mvn -B -q dependency:go-offline
+COPY gradlew build.gradle settings.gradle ./
+COPY gradle ./gradle
+RUN chmod +x gradlew
 COPY src ./src
-COPY schema.sql seed.json ./
-RUN mvn -B -q -DskipTests package
+RUN ./gradlew --no-daemon bootJar
 
 FROM eclipse-temurin:21-jre-jammy
 LABEL org.opencontainers.image.source="https://github.com/eatyummydance200/library-dashboard-backend"
 WORKDIR /app
-RUN useradd --uid 10001 --create-home app && mkdir /app/data && chown app:app /app/data
-COPY --from=build /build/target/app.jar ./app.jar
-USER app
-EXPOSE 8000
-ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=64m"
+RUN useradd --uid 10001 --create-home app
+COPY --from=build --chown=10001:10001 /build/build/libs/app.jar ./app.jar
+USER 10001:10001
+EXPOSE 8080
+ENV JAVA_TOOL_OPTIONS="-Xms32m -XX:MaxRAMPercentage=50"
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

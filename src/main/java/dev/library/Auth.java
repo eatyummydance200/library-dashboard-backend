@@ -28,43 +28,28 @@ class Auth {
 
   private void authenticate(HttpServletRequest r, String name, String password) {
     long now = Instant.now().getEpochSecond();
-    db.write(
-        c -> {
-          Db.update(c, "DELETE FROM login_attempts WHERE attempted_at<?", now - 900);
-          return null;
-        });
-    int attempts =
-        db.read(
-            c ->
-                Api.number(
-                    Db.one(c, "SELECT count(*) AS n FROM login_attempts WHERE username=?", name)
-                        .get("n")));
-    if (attempts >= 5) {
-      throw new Api.Failure(429, "로그인 시도가 많습니다. 15분 후 다시 시도해주세요.");
-    } else {
-      var user = db.read(c -> Db.one(c, "SELECT * FROM users WHERE username=?", name));
+    // Commit failed attempts before returning 401; throwing here would roll them back.
+    var user = db.write(c -> {
+      Db.update(c, "DELETE FROM login_attempts WHERE attempted_at<?", now - 900);
+      int attempts = Api.number(
+          Db.one(c, "SELECT count(*) AS n FROM login_attempts WHERE username=?", name).get("n"));
+      if (attempts >= 5)
+        throw new Api.Failure(429, "로그인 시도가 많습니다. 15분 후 다시 시도해주세요.");
+      var found = Db.one(c, "SELECT * FROM users WHERE username=?", name);
       boolean valid = Passwords.matches(
-          user == null ? dummy : (String) user.get("password_hash"), password);
-      if (user == null || Api.number(user.get("active")) == 0 || !valid) {
-        db.write(
-            c -> {
-              Db.update(c, "INSERT INTO login_attempts VALUES (?,?)", name, now);
-              return null;
-            });
-        throw new Api.Failure(401, "아이디 또는 비밀번호를 확인해주세요.");
-      } else {
-        db.write(
-            c -> {
-              Db.update(c, "DELETE FROM login_attempts WHERE username=?", name);
-              return null;
-            });
-        r.getSession().invalidate();
-        var session = r.getSession(true);
-        session.setAttribute("user_id", user.get("id"));
-        session.setAttribute("version", user.get("version"));
-        AuthFilter.csrf(r);
-        return;
+          found == null ? dummy : (String) found.get("password_hash"), password);
+      if (found == null || Api.number(found.get("active")) == 0 || !valid) {
+        Db.update(c, "INSERT INTO login_attempts VALUES (?,?)", name, now);
+        return null;
       }
-    }
+      Db.update(c, "DELETE FROM login_attempts WHERE username=?", name);
+      return found;
+    });
+    if (user == null) throw new Api.Failure(401, "아이디 또는 비밀번호를 확인해주세요.");
+    r.getSession().invalidate();
+    var session = r.getSession(true);
+    session.setAttribute("user_id", user.get("id"));
+    session.setAttribute("version", user.get("version"));
+    AuthFilter.csrf(r);
   }
 }
