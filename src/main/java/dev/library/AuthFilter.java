@@ -38,7 +38,7 @@ class AuthFilter extends OncePerRequestFilter {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'"
             + " data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action"
             + " 'self'; object-src 'none'");
-    if (!path.startsWith("/static/")) response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Cache-Control", "no-store");
     try {
       HttpSession session = request.getSession(false);
       Map<String, Object> user = null;
@@ -61,21 +61,13 @@ class AuthFilter extends OncePerRequestFilter {
       }
       request.setAttribute("user", user);
       boolean publicPath =
-          path.equals("/login")
-              || path.equals("/api/auth/csrf")
+          path.equals("/api/auth/csrf")
               || path.equals("/api/auth/login")
-              || path.equals("/healthz")
-              || path.startsWith("/static/");
-      if (!publicPath && user == null) {
-        if (path.startsWith("/api/")) throw new Api.Failure(401, "로그인이 필요합니다.");
-        response.setStatus(302);
-        response.setHeader("Location", request.getContextPath() + "/login");
-        return;
-      }
+              || path.equals("/healthz");
+      if (!publicPath && user == null) throw new Api.Failure(401, "로그인이 필요합니다.");
       if (!Set.of("GET", "HEAD", "OPTIONS").contains(request.getMethod())) {
         String expected = session == null ? null : (String) session.getAttribute("csrf");
         String supplied = request.getHeader("X-CSRF-Token");
-        if (supplied == null && !path.startsWith("/api/")) supplied = request.getParameter("csrf");
         if (expected == null
             || supplied == null
             || !MessageDigest.isEqual(

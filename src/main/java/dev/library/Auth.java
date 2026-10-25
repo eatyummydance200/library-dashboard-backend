@@ -3,58 +3,23 @@ package dev.library;
 import jakarta.servlet.http.*;
 import java.time.Instant;
 import java.util.*;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
-@Controller
-class Web {
+@RestController
+class Auth {
   final Db db;
   private final String dummy = Passwords.encode(Passwords.token());
 
-  Web(Db db) {
+  Auth(Db db) {
     this.db = db;
   }
 
-  @ModelAttribute
-  void base(HttpServletRequest r, Model m) {
-    m.addAttribute("base", r.getContextPath());
-  }
-
-  @GetMapping("/")
-  String index() {
-    return "index";
-  }
-
-  @GetMapping("/login")
-  String login(HttpServletRequest r, HttpServletResponse response, Model m) {
-    if (r.getAttribute("user") != null) return "redirect:/";
-    m.addAttribute("csrf", AuthFilter.csrf(r));
-    return "login";
-  }
-
-  @PostMapping("/login")
-  String loginPost(HttpServletRequest r, HttpServletResponse response, Model model) {
-    try {
-      authenticate(r, Api.text(r.getParameter("username"), "아이디", 32, true),
-          Api.password(r.getParameter("password")));
-      return "redirect:/";
-    } catch (Api.Failure e) {
-      response.setStatus(e.status);
-      model.addAttribute("error", e.getMessage());
-      model.addAttribute("csrf", AuthFilter.csrf(r));
-      return "login";
-    }
-  }
-
   @GetMapping("/api/auth/csrf")
-  @ResponseBody
   Object csrf(HttpServletRequest r) {
     return Map.of("csrf", AuthFilter.csrf(r));
   }
 
   @PostMapping("/api/auth/login")
-  @ResponseBody
   Object loginJson(@RequestBody Map<String, Object> body, HttpServletRequest r) {
     authenticate(r, Api.text(body.get("username"), "아이디", 32, true),
         Api.password(body.get("password")));

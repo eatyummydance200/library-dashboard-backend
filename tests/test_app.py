@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import sqlite3
 import tempfile
 import unittest
@@ -40,37 +39,31 @@ class ApplicationTests(unittest.TestCase):
 
     def login(self, client=None, username='testadmin', password='test-password-123'):
         client = client or self.client
-        page = client.get(BASE + '/login')
-        self.assertIn('action="' + BASE + '/login"', page.text)
-        token = re.search(r'name="csrf" value="([^"]+)"', page.text)[1]
-        response = client.post(BASE + '/login', data={'csrf': token, 'username': username, 'password': password})
-        return response
+        token = client.get(BASE + '/api/auth/csrf').json['csrf']
+        return client.post(BASE + '/api/auth/login',
+                           json={'username': username, 'password': password},
+                           headers={'X-CSRF-Token': token})
 
     def write(self, path, body, method='post', client=None):
         client = client or self.client
         token = client.get(BASE + '/api/me').json['csrf']
         return getattr(client, method)(BASE + '/api' + path, json=body, headers={'X-CSRF-Token': token})
 
-    def test_authentication_csrf_and_asset_paths(self):
+    def test_authentication_csrf_and_api_only_routes(self):
         self.assertEqual(self.client.get(BASE + '/api/staff').status_code, 401)
-        for path in ['/static/../api/staff', '/static/%2e%2e/api/staff']:
-            self.assertIn(self.client.get(BASE + path).status_code, (400, 401))
-        self.assertEqual(self.client.post(BASE + '/login', data={}).status_code, 403)
-        with self.client.get(BASE + '/static/glass.css') as stylesheet:
-            self.assertEqual(stylesheet.status_code, 200)
+        self.assertEqual(self.client.post(BASE + '/api/auth/login', json={}).status_code, 403)
         self.assertEqual(self.client.get(BASE + '/healthz').json, {'status': 'ok'})
-        self.assertEqual(self.login().status_code, 302)
-        self.assertEqual(self.client.get(BASE).location, BASE + '/')
-        page = self.client.get(BASE + '/')
-        self.assertIn(BASE + '/static/actions.js', page.text)
-        self.assertIn(BASE + '/static/inu-logo.png', page.text)
-        self.assertNotRegex(page.text, r'<a\b[^>]*href="https://www\.inu\.ac\.kr/')
-        logo = self.client.get(BASE + '/static/inu-logo.png')
-        self.assertEqual(logo.status_code, 200)
-        self.assertTrue(logo.data.startswith(b'\x89PNG\r\n\x1a\n'))
-        self.assertEqual(int.from_bytes(logo.data[16:20], 'big'), 539)
-        self.assertEqual(int.from_bytes(logo.data[20:24], 'big'), 301)
-        self.assertIn("script-src 'self'", page.headers['Content-Security-Policy'])
+        login = self.login()
+        self.assertEqual(login.status_code, 200)
+        self.assertTrue(login.json['csrf'])
+        session = self.client.get(BASE + '/api/me')
+        self.assertEqual(session.json['user']['username'], 'testadmin')
+        self.assertEqual(session.json['csrf'], login.json['csrf'])
+        self.assertIn("script-src 'self'", session.headers['Content-Security-Policy'])
+        self.assertEqual(session.headers['Cache-Control'], 'no-store')
+        for path in ['/', '/login', '/static/glass.css', '/static/inu-logo.png']:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(BASE + path).status_code, 404)
         self.assertEqual(self.client.post(BASE + '/api/staff', json={}).status_code, 403)
 
     def test_wrong_password_and_throttle(self):
@@ -83,15 +76,14 @@ class ApplicationTests(unittest.TestCase):
         from threading import Barrier
 
         clients = [self.app.test_client() for _ in range(7)]
-        tokens = [re.search(r'name="csrf" value="([^"]+)"', client.get(BASE + '/login').text)[1]
-                  for client in clients]
+        tokens = [client.get(BASE + '/api/auth/csrf').json['csrf'] for client in clients]
         barrier = Barrier(7)
 
         def login(index):
             barrier.wait(timeout=5)
-            return clients[index].post(BASE + '/login', data={
-                'csrf': tokens[index], 'username': f'unknown-{index}', 'password': 'wrong-password',
-            })
+            return clients[index].post(BASE + '/api/auth/login',
+                json={'username': f'unknown-{index}', 'password': 'wrong-password'},
+                headers={'X-CSRF-Token': tokens[index]})
 
         with ThreadPoolExecutor(max_workers=7) as pool:
             responses = list(pool.map(login, range(7)))
@@ -100,9 +92,9 @@ class ApplicationTests(unittest.TestCase):
         for response in responses:
             if response.status_code == 429:
                 self.assertIn('잠시 후 다시 시도해주세요.', response.text)
-                self.assertIn('name="csrf"', response.text)
+                self.assertIn('error', response.json)
         self.assertEqual(self.client.get(BASE + '/healthz').status_code, 200)
-        self.assertEqual(self.login().status_code, 302)
+        self.assertEqual(self.login().status_code, 200)
 
     def test_chunked_json_limit_covers_media_types_and_exact_boundary(self):
         self.login()
@@ -141,7 +133,7 @@ class ApplicationTests(unittest.TestCase):
             self.assertEqual(fresh.db().execute('SELECT count(*) FROM staff').fetchone()[0], 2)
             self.assertEqual(fresh.db().execute('SELECT count(*) FROM shifts').fetchone()[0], 2)
             self.assertEqual(fresh.db().execute('PRAGMA integrity_check').fetchone()[0], 'ok')
-        self.assertEqual(self.login(fresh.test_client()).status_code, 302)
+        self.assertEqual(self.login(fresh.test_client()).status_code, 200)
 
     def test_schedule_seed_and_half_hour_boundary(self):
         self.login()
@@ -191,7 +183,7 @@ class ApplicationTests(unittest.TestCase):
         self.login()
         self.assertEqual(self.write('/users', {'username': 'worker', 'password': 'worker-password-123', 'role': 'worker'}).status_code, 201)
         worker = self.app.test_client()
-        self.assertEqual(self.login(worker, 'worker', 'worker-password-123').status_code, 302)
+        self.assertEqual(self.login(worker, 'worker', 'worker-password-123').status_code, 200)
         self.assertEqual(worker.get(BASE + '/api/staff').status_code, 200)
         self.assertEqual(worker.get(BASE + '/api/backup').status_code, 403)
         self.assertEqual(self.write('/staff', {'name': '금지'}, client=worker).status_code, 403)
@@ -218,7 +210,7 @@ class ApplicationTests(unittest.TestCase):
         self.login(other)
         self.assertEqual(self.write('/password', {'current': 'test-password-123', 'password': ' new-password-123 '}).status_code, 200)
         self.assertEqual(other.get(BASE + '/api/me').status_code, 401)
-        self.assertEqual(self.login(password=' new-password-123 ').status_code, 302)
+        self.assertEqual(self.login(password=' new-password-123 ').status_code, 200)
 
     def test_backup_and_restart_preserve_data(self):
         self.login()
@@ -620,13 +612,13 @@ class ApplicationTests(unittest.TestCase):
             dklen=64, maxmem=64*1024*1024).hex()
         with sqlite3.connect(self.database) as connection:
             connection.execute('UPDATE users SET password_hash=? WHERE id=1', (encoded,))
-        page = self.client.get(BASE + '/login')
+        page = self.client.get(BASE + '/api/auth/csrf')
         cookie = page.headers['Set-Cookie']
         self.assertIn('HttpOnly', cookie)
         self.assertIn('Path=' + BASE, cookie)
         self.assertIn('SameSite=Lax', cookie)
         response = self.login()
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 200)
         self.assertNotEqual(response.headers['Set-Cookie'].split(';')[0], cookie.split(';')[0])
         self.assertEqual(self.write('/issues', {'category': '인계', 'title': '큰 요청', 'body': 'x'*66000}).status_code, 413)
         self.assertEqual(self.write('/shifts', {'staff_id': 1, 'day': self.monday.isoformat(), 'start': 540, 'end': 600}).status_code, 400)

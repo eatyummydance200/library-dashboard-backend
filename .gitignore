@@ -6,14 +6,7 @@ __pycache__/
 *.pyc
 *.sqlite3*
 .deployment-state.json
-/preview*.png
-/index.html
-/check.cjs
-/static/fonts/*.woff2
 
 /target/
 
-/frontend/node_modules/
-/frontend/dist/
-/frontend/public/OFL.txt
-.vercel/
+.env*
