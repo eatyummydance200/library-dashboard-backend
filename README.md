@@ -1,141 +1,141 @@
 # 인천대학교 연속간행물실 근무 대시보드 — Backend
 
-Java 21 + Spring Boot 3.5.16 + SQLite 기반 근무 관리 API 서버다. 이 저장소는 API·인증·DB·백업·서버 배포 코드만 관리한다.
+Java 21 · Spring Boot 4.1.2 · Gradle 9.7.1 · PostgreSQL 18 기반 API다.
+프론트는 [별도 저장소](https://github.com/eatyummydance200/library-dashboard-frontend)에서 관리한다.
 
-React 화면·CSS·로고·글꼴·Vercel 설정은 [프론트엔드 저장소](https://github.com/eatyummydance200/library-dashboard-frontend)에서 관리한다. 이 서버는 HTML 로그인 페이지나 정적 화면을 제공하지 않는다. 이전 화면은 분리 전 Git 이력에서 확인할 수 있다.
+## 실행
 
-## 구조
-
-```text
-src/main/java/dev/library/  API, JSON 인증, 세션, DB
-src/main/resources/        서버 설정, DB 마이그레이션
-src/test/                  Java 단위 테스트
-tests/                     실제 HTTP 서버 기반 API 회귀 테스트
-schema.sql, seed.json      초기 스키마와 빈 데이터 템플릿
-scripts/                   로컬 실행, Server Desk 배포 보조 도구
-ops/                       DB 백업용 systemd service/timer
-Dockerfile                 백엔드 이미지
-```
-
-## 로컬 실행과 검증
-
-Java 21, Maven, Python 3이 필요하다. 프론트 의존성 설치나 글꼴 다운로드는 필요 없다.
-
-| 환경변수 | 용도 |
-| --- | --- |
-| `ADMIN_USER` | 첫 실행 때 생성할 관리자 아이디 |
-| `ADMIN_PASSWORD` | 초기 비밀번호, 10자 이상. 저장소나 이미지에 넣지 않음 |
-| `DATABASE` | DB 파일 경로, 기본 `/app/data/library.sqlite3` |
-| `PORT` | 기본 `8000`, 프론트 개발 프록시 연결 시 `8090` |
-| `APP_BASE_PATH` | 기본 `/library-dashboard` |
-| `COOKIE_SECURE` | 기본 `true`, 로컬 HTTP 개발 때만 `false` |
-| `INITIAL_SCHEDULE_JSON` | 선택 사항. 첫 실행 때 가져올 비공개 근무자·시간표 JSON |
-
-`ADMIN_USER`, `ADMIN_PASSWORD`를 환경변수로 설정한 뒤 실행한다.
+Java 21이 필요하다. Gradle은 Wrapper가 내려받는다. 포트는 **8080**, 기본 경로는 `/library-dashboard`다.
 
 ```bash
-mvn -B verify
-python3 -m unittest discover -s tests -v
-
-export DATABASE="$PWD/data/local.sqlite3"
-export PORT=8090
-export COOKIE_SECURE=false
-java -Xms32m -Xmx256m -jar target/app.jar
+cp .env.example .env
+# .env의 DB_PASSWORD, ADMIN_USER, ADMIN_PASSWORD를 실제 개발용 값으로 변경
+# Docker Compose는 .env를 자동으로 읽는다.
+docker compose up --build -d
 ```
 
-비공개 `.runtime.env`가 있으면 `python3 scripts/run-local.py`로 빌드·실행할 수도 있다. 기본 포트는 `8090`이며 `PORT`로 변경한다. 프론트는 별도 저장소에서 `npm run dev`로 실행한다.
+DB만 Docker로 띄우고 Java를 직접 실행할 수도 있다.
 
-`seed.json`은 빈 템플릿이다. 실제 근무자·연락처·비밀번호·DB·환경변수 파일은 커밋하지 않는다. 기존 DB는 초기 관리자·초기 데이터 환경변수로 덮어쓰지 않는다.
+```bash
+docker compose up -d postgres
+# .env 값들을 셸 환경변수로 설정한 뒤 실행한다. bootRun은 .env를 자동으로 읽지 않는다.
+./gradlew bootRun
+# Windows PowerShell: .\gradlew.bat bootRun
+```
 
-## API와 인증
+| 환경변수 | 설명 |
+| --- | --- |
+| `DB_URL` | JDBC 주소, 기본 `jdbc:postgresql://localhost:5432/library_dashboard` |
+| `DB_USER` | DB 계정, 기본 `library_dashboard` |
+| `DB_PASSWORD` | 필수 DB 비밀번호 |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | 빈 DB의 최초 관리자. 아이디 영문·숫자 등 2~32자, 비밀번호 10~128자 |
+| `APP_BASE_PATH` | 기본 `/library-dashboard`, `/` + 영문·숫자·밑줄·하이픈 |
+| `COOKIE_SECURE` | 기본 `true`. 로컬 HTTP에서만 `false` |
 
-모든 경로는 기본 `/library-dashboard` 아래에 있다.
+기존 사용자가 있으면 초기 관리자 환경변수로 덮어쓰지 않는다. 초기 시간표 JSON 자동 주입은 제거했다. 새 DB의 근무자는 API에서 등록하거나 아래 이관 도구로 가져온다.
+
+```bash
+./gradlew build
+java -jar build/libs/app.jar
+```
+
+요청에 따라 테스트 소스와 테스트 의존성은 모두 제거했다. `build`와 CI는 컴파일·패키징을 확인한다.
+
+## API와 데이터
+
+기존 URL과 JSON 응답을 유지한다. `/api/backup`의 파일 형식만 SQLite에서 JSON으로 변경했다.
 
 | 경로 | 설명 |
 | --- | --- |
-| `GET /healthz` | 비로그인 상태 확인, `{"status":"ok"}` |
-| `GET /api/auth/csrf` | 로그인 전 CSRF 토큰 발급, `{"csrf":"..."}` |
+| `GET /healthz` | DB 연결을 포함한 기존 상태 확인 |
+| `GET /api/auth/csrf` | 로그인 전 CSRF 토큰 |
 | `POST /api/auth/login` | JSON 로그인, 새 CSRF 토큰 반환 |
-| `GET /api/me` | 로그인 계정과 CSRF 토큰 조회 |
-| `POST /api/logout` | 세션 종료 |
-| `/api/schedule`, `/api/shifts`, `/api/status` | 시간표·근무 구간·근무 현황 |
-| `/api/staff`, `/api/teachers`, `/api/duty` | 근무자·선생님·당직 연락처 |
+| `GET /api/me`, `POST /api/logout` | 로그인 계정·로그아웃 |
+| `/api/schedule`, `/api/shifts`, `/api/status` | 시간표·근무 구간·현황 |
+| `/api/staff`, `/api/teachers`, `/api/duty` | 근무자·선생님·당직 |
 | `/api/issues`, `/api/tagging`, `/api/archive` | 이슈·태깅·과월호 |
-| `/api/users`, `/api/password`, `/api/backup` | 계정·비밀번호·관리자 백업 |
+| `/api/users`, `/api/password` | 관리자 계정 관리·비밀번호 변경 |
+| `GET /api/backup` | 관리자 전용 업무 데이터 JSON 다운로드. 비밀번호 해시와 연락처 포함 |
 
-로그인은 `{"username":"...","password":"..."}` JSON과 `X-CSRF-Token` 헤더를 보낸다. 로그인 성공 시 세션을 교체하므로 응답의 새 CSRF 토큰을 사용한다. 모든 쓰기 API에는 세션 쿠키와 CSRF 헤더가 필요하다. 비로그인 요청은 JSON `401`이며 HTML로 이동하지 않는다. `/login`, `/static/*`, 루트 업무 화면은 제거했다.
+위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다.
 
-프론트의 Vite·Vercel 프록시가 API 요청을 같은 경로의 Java 서버에 전달한다. 브라우저는 프론트 출처의 세션 쿠키를 사용하므로 별도 CORS 허용은 필요 없다. 운영 API의 [상태 확인 주소](https://eatyummydance200.tail72d30b.ts.net/library-dashboard/healthz)를 유지한다.
+세션은 PostgreSQL에 저장하며 여러 Pod 및 재시작 사이에 공유한다. 유효 기간은 12시간이다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션이 무효화된다. 쿠키 이름은 `library_dashboard_session`, HttpOnly·SameSite=Lax·운영 Secure다. 프론트 프록시는 쿠키와 CSRF 헤더를 전달해야 한다. 별도 CORS 허용은 없다.
 
-로그인 시도 제한, 관리자·근무자·본인 담당 권한, 64KB JSON 요청 제한을 유지한다. 쿠키는 HttpOnly·SameSite=Lax이며 운영에서는 Secure를 사용한다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션을 무효화한다. 서버 재시작 후에는 다시 로그인한다.
+프론트 개발 프록시의 대상 포트를 `http://127.0.0.1:8080`으로 바꾼다. 운영 프록시는 실제 Ingress 주소로 변경한다. 프론트 저장소는 이번 백엔드 변경에 포함하지 않는다.
 
-## 데이터 규칙
+- 업무 날짜·당직 초기화는 `Asia/Seoul`, 기록 시각은 UTC다.
+- 근무는 평일 09:00~22:00, 30분 단위다. 같은 사람의 겹친 근무와 이미 시간표가 있는 주로 복사는 거절한다.
+- 업무상의 `desk` 근무 역할은 유지한다. 제거 대상은 앱 배포 관리 기능이다.
+- 과월호는 재직 근무자 7명에게 배정한다. 담당 변경 시 항목 ID·완료 상태·완료자·시각을 보존한다. 근무자는 본인 담당만 완료 처리한다.
+- Flyway가 `src/main/resources/db/migration`의 버전별 SQL을 적용한다. 적용된 SQL은 수정하지 않고 새 버전을 추가한다.
+- 작은 팀을 기준으로 업무 쓰기를 PostgreSQL 트랜잭션 잠금 하나로 직렬화한다. Pod가 달라도 검사와 저장 사이에 다른 쓰기가 끼어들지 않는다. 읽기는 일관된 DB 스냅샷을 사용한다. 쓰기 대기가 커지면 업무별 잠금으로 분리한다.
 
-- 근무 구간은 정수 분의 시작 포함·종료 제외 구간이다. 09:00~22:00, 30분 단위이며 같은 사람의 겹친 근무는 거절한다.
-- 오픈은 09:00 근무자, 마감은 날짜별 마지막 종료 시각(최소 21:00)에 종료한 근무자를 한 번씩 센다. 일반·데스크 역할은 별도 구간이다.
-- 주 복사는 대상 주가 비어 있을 때만 허용한다. 비활성 근무자의 과거 기록은 보존한다. 이슈 조회는 최근 200건이다.
-- 날짜·주간 경계·당직 초기화는 `Asia/Seoul`, 생성·수정 시각은 UTC 기준이다. 당직은 저장한 한국 날짜에만 유효하다.
-- 태깅은 연도·월별로 저장하며 관리자만 변경한다. 과월호는 재직 근무자 7명에게 7개 묶음을 한 트랜잭션으로 추첨하거나 수동 배정한다. 근무자는 본인 담당 항목만 완료 처리한다.
-- 과월호 담당자를 바꿔도 항목 ID·완료 상태·체크 계정·시각을 유지하며 새 담당자에게 권한을 넘긴다. 동시 배정 변경은 덮어쓰지 않는다.
-- 선생님은 근로학생·시간표·태깅·과월호 인원과 분리한다. 당직은 연결된 선생님의 최신 연락처를 조회한다.
-- 시작 시 버전별 SQL로 DB를 v7까지 업그레이드한다. 이번 저장소 분리는 스키마와 저장 데이터를 바꾸지 않는다. 기존 scrypt/PBKDF2-SHA256 비밀번호 해시도 유지한다.
+## Kubernetes
 
-## Server Desk 배포
+외부 또는 클러스터에서 관리하는 PostgreSQL을 사용한다. API Pod에는 DB 볼륨이나 Docker 소켓이 필요 없다.
 
-PR에서는 Java 단위 테스트와 Python API 회귀 테스트를 실행한다. `main` push 또는 수동 실행에서는 검증 후 `ghcr.io/eatyummydance200/library-dashboard:main`과 커밋 SHA 태그를 게시한다. 기존 Server Desk와 호환되도록 이미지 이름을 유지한다. 운영 반영은 Server Desk에서 실행한다.
-
-| 항목 | 값 |
-| --- | --- |
-| 앱 이름 | `library-dashboard` |
-| 호스트 / 컨테이너 포트 | `8090` / `8000` |
-| 바인딩 | `127.0.0.1` |
-| 상태 확인 | `/library-dashboard/healthz` |
-| 볼륨 | `data:/app/data` → `sd-library-dashboard-data` |
-| 사용자 | UID `10001` |
-| 자동 업데이트 | 초기 꺼짐 |
-
-기존 Funnel의 `/library-dashboard` → `http://127.0.0.1:8090/library-dashboard` 연결과 데이터 볼륨을 유지한다. 프론트를 먼저 연결·검증한 뒤 API 전용 백엔드를 배포한다. 사용자는 별도 프론트 주소로 접속한다.
-
-`python3 scripts/deploy.py bootstrap`은 초기 로컬 이미지 기동, `python3 scripts/deploy.py deploy`는 Server Desk 이미지 배포를 수행한다. 비공개 `.runtime.env`와 관리 서비스의 `.env`를 사용하며 관리 서비스 파일 위치는 `--server-desk-env`로 지정한다.
-
-운영 JVM은 힙 최대 256MB, 메타스페이스 최대 128MB다. 한 서버·한 프로세스·소규모 팀 기준이며 SQLite DB를 여러 컨테이너에서 공유하지 않는다.
-
-## 백업과 복구
-
-관리자는 `GET /api/backup`으로 DB를 다운로드한다. 다음 명령은 SQLite `VACUUM INTO`로 일관된 백업을 만들고 7일 이전 백업을 정리한다.
+1. 운영 환경변수 파일을 저장소 밖에 만든다. `DB_URL`, `DB_USER`, `DB_PASSWORD`, 최초 관리자를 넣고 파일 권한을 제한한다.
+2. 같은 namespace에 Secret을 생성한다.
+3. CI가 만든 커밋 SHA 이미지로 배포한다.
 
 ```bash
-docker exec sd-library-dashboard java -jar /app/app.jar --backup
+kubectl create secret generic library-dashboard --from-env-file=/private/library-dashboard.env
+# k8s/deployment.yaml의 image 태그를 배포할 커밋 SHA로 변경
+kubectl apply -f k8s/deployment.yaml
+kubectl rollout status deployment/library-dashboard
 ```
 
-`ops/`의 타이머는 매일 한국 시간 04시에 실행한다. 백업은 별도 기기에도 보관한다. 복구 시 서비스를 중지하고 데이터 디렉터리 전체를 보관한 뒤 `PRAGMA integrity_check`를 통과한 백업을 복원한다. 이전 `-wal`, `-shm` 파일을 섞지 않고 UID 10001을 유지한다. 이미지 롤백은 DB를 되돌리지 않으므로 호환되는 백업이 필요하다.
+예시는 Deployment 2 replicas + ClusterIP Service 8080이다. 읽기 전용 루트 파일시스템, UID 10001, 임시 `/tmp` 볼륨, 리소스 제한을 포함한다. 30초 종료 유예 중 Spring은 최대 20초간 진행 중 요청을 마무리한다.
 
-설계와 저장소 경계는 [ARCHITECTURE.md](ARCHITECTURE.md)를 참고한다.
+| Probe | 경로 | 의미 |
+| --- | --- | --- |
+| startup / liveness | `/library-dashboard/actuator/health/liveness` | JVM·앱 생존, DB 장애로 재시작하지 않음 |
+| readiness | `/library-dashboard/actuator/health/readiness` | DB를 사용할 수 있어야 요청 전달 |
 
-## 커밋 컨벤션
+`APP_BASE_PATH`를 바꾸면 probe 경로도 바꾼다. Pod당 DB 풀은 최대 5개다. Pod 수와 PostgreSQL 연결 한도를 함께 잡는다. HTTPS Ingress의 호스트·인증서·DB 주소는 클러스터에 맞게 설정한다. Ingress는 기본 경로를 제거하지 않고 Service 8080으로 전달한다. 첫 배포 전 Secret과 이미지를 준비해야 한다.
 
-커밋 제목은 `이모지 태그 : 변경 내용` 형식이다. 태그의 철자·대소문자와 콜론 앞뒤 공백을 유지하며 한 커밋에는 하나의 목적을 담는다.
+## 기존 데이터 이관 / JSON 복원
 
-| 태그 | 설명 |
-| --- | --- |
-| ⚙️ Setting : | 개발 환경 세팅 |
-| ✅ Test : | test 관련 |
-| ✨ Feature : | 기능 개발 |
-| 🌍 Ci : | 배포 관련 |
-| 🪲 Fix : | 버그 수정 |
-| 📄 Docs : | 문서 작성 및 수정 |
-| 🔧 Chore : | 자잘한 수정 |
-| 🔨 Refactor : | 코드 리팩토링 |
+운영 DB를 자동으로 변환하거나 삭제하지 않는다. 이관 중에는 구·신 앱의 쓰기를 모두 중지한다.
+
+1. 구 앱이 정상 종료된 SQLite **v7** 스냅샷을 별도로 보관한다. 실행 중인 DB 파일 하나만 복사하면 WAL의 데이터가 빠질 수 있다. 구 앱의 백업 파일을 쓰거나 서비스를 중지하고 복사한다.
+2. 새 PostgreSQL DB에서 앱을 한 번 실행해 Flyway 스키마와 초기 관리자 한 명을 만든 뒤 앱을 중지한다.
+3. 별도 Python 환경에 이관 도구 의존성을 설치한다. 아래 `PG*` 환경변수를 대상 DB에 맞게 설정한다.
+
+```bash
+python -m pip install 'psycopg[binary]>=3.2,<4'
+export PGHOST=localhost PGPORT=5432 PGDATABASE=library_dashboard PGUSER=library_dashboard
+# PGPASSWORD는 환경변수 또는 .pgpass로 안전하게 설정
+python scripts/import-data.py /private/library-v7.sqlite3 --replace-bootstrap-admin
+# 새 JSON 내보내기도 같은 명령으로 복원
+python scripts/import-data.py /private/library-export.json --replace-bootstrap-admin
+```
+
+둘 중 필요한 명령 하나만 실행한다. 대상은 업무 데이터가 없고 관리자 한 명만 있는 DB여야 한다. 옵션은 그 초기 관리자를 원본 계정들로 교체한다는 뜻이다. 하나라도 실패하면 데이터 변경은 롤백한다. ID·비밀번호 해시·기존 담당 기록을 유지하고 자동 증가 ID를 맞춘다. 이전 세션은 옮기지 않아 다시 로그인해야 한다. SQLite 원본은 읽기 전용으로 연다. 이관 후 인원·시간표·배정·완료 기록을 비교하고 앱을 시작한다.
+
+## 운영 백업
+
+API JSON은 업무 데이터 이관용이며 전체 PostgreSQL 백업을 대체하지 않는다. 운영에서는 DB 운영자/관리형 서비스의 정기 백업과 복구 정책을 사용한다. 예를 들어 PostgreSQL 18 클라이언트와 `PG*` 환경변수로 실행한다.
+
+```bash
+pg_dump --format=custom --file=/private/library.dump
+# 빈 복구 DB를 PGDATABASE로 지정한 뒤 실행
+pg_restore --exit-on-error --single-transaction --no-owner --dbname="$PGDATABASE" /private/library.dump
+```
+
+덤프·JSON에는 민감 정보가 있으므로 암호화된 별도 저장소에 보관한다. 복구·이관은 원본과 분리한 빈 DB에서 먼저 확인한다. 이미지 롤백은 DB 스키마를 되돌리지 않는다.
+
+## CI와 구조
+
+PR은 Gradle 빌드를 수행한다. main push/수동 실행은 빌드 후 GHCR에 `main` 및 커밋 SHA 이미지를 게시한다. 클러스터 반영은 배포 관리자가 수행한다.
 
 ```text
-⚙️ Setting : 로컬 SQLite 실행 환경 설정
-✅ Test : 로그인 CSRF 검증 테스트 추가
-✨ Feature : 근무 시간표 조회 API 추가
-🌍 Ci : 백엔드 이미지 빌드 워크플로 수정
-🪲 Fix : 당직 연락처 날짜 초기화 오류 수정
-📄 Docs : API 실행 방법 문서화
-🔧 Chore : 사용하지 않는 설정 정리
-🔨 Refactor : 인증 처리 로직 분리
+src/main/java/dev/library/        API · 인증 · JDBC
+src/main/resources/db/migration/  PostgreSQL / 세션 스키마
+scripts/import-data.py            SQLite v7 / JSON → 새 PostgreSQL
+k8s/deployment.yaml               Deployment · Service
+compose.yaml                     로컬 PostgreSQL · API
+AUDIT.md                         개편 전 리뷰와 조치 결과
 ```
 
-본문이 필요하면 제목 다음 한 줄을 비우고 변경 이유·영향을 적는다. PR을 squash merge할 때도 같은 제목 형식을 사용한다.
+커밋 제목은 기존 `이모지 태그 : 변경 내용` 형식을 따른다. 설정 `⚙️ Setting :`, 기능 `✨ Feature :`, 배포 `🌍 Ci :`, 수정 `🪲 Fix :`, 문서 `📄 Docs :`, 정리 `🔧 Chore :`, 개편 `🔨 Refactor :`를 쓴다.

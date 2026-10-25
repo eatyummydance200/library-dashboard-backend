@@ -267,7 +267,7 @@ class Api {
       fail("재직 중인 근무자를 선택해주세요.");
     if (one(
             c,
-            "SELECT id FROM shifts WHERE day=? AND staff_id=? AND start<? AND end>? AND id<>?",
+            "SELECT id FROM shifts WHERE day=? AND staff_id=? AND start<? AND \"end\">? AND id<>?",
             day.toString(),
             id,
             end,
@@ -284,7 +284,7 @@ class Api {
         c -> {
           update(
               c,
-              "INSERT INTO shifts(staff_id,day,start,end,role) VALUES (?,?,?,?,?)",
+              "INSERT INTO shifts(staff_id,day,start,\"end\",role) VALUES (?,?,?,?,?)",
               shift(c, d, 0));
           return null;
         });
@@ -301,7 +301,7 @@ class Api {
           var a = new ArrayList<>(Arrays.asList(shift(c, d, id)));
           a.add(id);
           update(
-              c, "UPDATE shifts SET staff_id=?,day=?,start=?,end=?,role=? WHERE id=?", a.toArray());
+              c, "UPDATE shifts SET staff_id=?,day=?,start=?,\"end\"=?,role=? WHERE id=?", a.toArray());
           return ok();
         });
   }
@@ -332,7 +332,7 @@ class Api {
               fail("원본 주에 퇴직한 근무자가 포함되어 있습니다. 근무자를 확인해주세요.");
             update(
                 c,
-                "INSERT INTO shifts(staff_id,day,start,end,role) VALUES (?,?,?,?,?)",
+                "INSERT INTO shifts(staff_id,day,start,\"end\",role) VALUES (?,?,?,?,?)",
                 e.get("staff_id"),
                 day(e.get("day"))
                     .plusDays(java.time.temporal.ChronoUnit.DAYS.between(source, target))
@@ -717,7 +717,7 @@ class Api {
             rows(
                 c,
                 "SELECT i.*,u.username AS author FROM issues i JOIN users u ON u.id=i.author_id"
-                    + " WHERE (? IS NULL OR i.day=?) AND (? IS NULL OR i.category=?) AND (? IS NULL"
+                    + " WHERE (CAST(? AS TEXT) IS NULL OR i.day=?) AND (CAST(? AS TEXT) IS NULL OR i.category=?) AND (CAST(? AS TEXT) IS NULL"
                     + " OR(i.day>=? AND i.day<?)) ORDER BY i.created_at DESC,i.id DESC LIMIT 200",
                 day,
                 day,
@@ -845,7 +845,7 @@ class Api {
   }
 
   @GetMapping("/api/backup")
-  ResponseEntity<byte[]> backup(HttpServletRequest r) throws Exception {
+  ResponseEntity<?> backup(HttpServletRequest r) {
     admin(r);
     return ResponseEntity.ok()
         .header(
@@ -853,8 +853,8 @@ class Api {
             "attachment; filename=library-"
                 + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                     .format(LocalDateTime.now(Application.KOREA))
-                + ".sqlite3")
-        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                + ".json")
+        .contentType(MediaType.APPLICATION_JSON)
         .body(db.backup());
   }
 }

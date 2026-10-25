@@ -1,6 +1,6 @@
 package dev.library;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import java.io.*;
@@ -63,7 +63,9 @@ class AuthFilter extends OncePerRequestFilter {
       boolean publicPath =
           path.equals("/api/auth/csrf")
               || path.equals("/api/auth/login")
-              || path.equals("/healthz");
+              || path.equals("/healthz")
+              || path.equals("/actuator/health/liveness")
+              || path.equals("/actuator/health/readiness");
       if (!publicPath && user == null) throw new Api.Failure(401, "로그인이 필요합니다.");
       if (!Set.of("GET", "HEAD", "OPTIONS").contains(request.getMethod())) {
         String expected = session == null ? null : (String) session.getAttribute("csrf");

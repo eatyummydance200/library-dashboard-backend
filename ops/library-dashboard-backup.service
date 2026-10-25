@@ -1,8 +1,0 @@
-[Unit]
-Description=Consistent SQLite backup for library dashboard
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/docker exec sd-library-dashboard java -jar /app/app.jar --backup
