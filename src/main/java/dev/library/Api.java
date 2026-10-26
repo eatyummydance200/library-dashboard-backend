@@ -186,14 +186,16 @@ class Api {
           var contact = id == null ? null : one(c,
               "SELECT id AS teacher_id,name AS teacher,extension,phone FROM teachers WHERE id=?", id);
           if (id != null && contact == null) throw new Failure(404, "선생님을 찾을 수 없습니다.");
-          update(
-              c,
-              "INSERT INTO duty_contact(id,teacher,extension,phone,day,teacher_id) VALUES(1,?,?,?,?,?) ON CONFLICT(id) DO"
-                  + " UPDATE SET teacher=excluded.teacher,extension=excluded.extension,phone=excluded.phone,"
-                  + " day=excluded.day,teacher_id=excluded.teacher_id",
+          Object[] fields = {
               contact == null ? "" : contact.get("teacher"),
               contact == null ? "" : contact.get("extension"),
-              contact == null ? "" : contact.get("phone"), today(), id);
+              contact == null ? "" : contact.get("phone"), today(), id};
+          if (update(c,
+                  "UPDATE duty_contact SET teacher=?,extension=?,phone=?,day=?,teacher_id=? WHERE id=1",
+                  fields) == 0)
+            update(c,
+                "INSERT INTO duty_contact(id,teacher,extension,phone,day,teacher_id) VALUES(1,?,?,?,?,?)",
+                fields);
           return contact == null ? Map.of("teacher_id", 0, "teacher", "", "extension", "", "phone", "") : contact;
         });
   }
@@ -543,17 +545,15 @@ class Api {
         c -> {
           if (one(c, "SELECT id FROM staff WHERE id=?", id) == null)
             throw new Failure(404, "근무자를 찾을 수 없습니다.");
-          update(
-              c,
-              "INSERT INTO monthly_tags(staff_id,year,month,completed,updated_by,updated_at)"
-                  + " VALUES(?,?,?,?,?,?) ON CONFLICT(staff_id,year,month) DO UPDATE SET"
-                  + " completed=excluded.completed,updated_by=excluded.updated_by,updated_at=excluded.updated_at",
-              id,
-              year,
-              month,
-              done,
-              user(r).get("id"),
-              stamp());
+          String now = stamp();
+          if (update(c,
+                  "UPDATE monthly_tags SET completed=?,updated_by=?,updated_at=?"
+                      + " WHERE staff_id=? AND year=? AND month=?",
+                  done, user(r).get("id"), now, id, year, month) == 0)
+            update(c,
+                "INSERT INTO monthly_tags(staff_id,year,month,completed,updated_by,updated_at)"
+                    + " VALUES(?,?,?,?,?,?)",
+                id, year, month, done, user(r).get("id"), now);
           return ok();
         });
   }

@@ -1,0 +1,18 @@
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      connection-init-sql: SET statement_timeout = '15s'
+
+app:
+  admin:
+    username: ${ADMIN_USER:}
+    password: ${ADMIN_PASSWORD:}

@@ -9,7 +9,7 @@ RUN ./gradlew --no-daemon bootJar
 FROM eclipse-temurin:21-jre-jammy
 LABEL org.opencontainers.image.source="https://github.com/eatyummydance200/library-dashboard-backend"
 WORKDIR /app
-RUN useradd --uid 10001 --create-home app
+RUN useradd --uid 10001 --create-home app && mkdir data && chown app:app data
 COPY --from=build --chown=10001:10001 /build/build/libs/app.jar ./app.jar
 USER 10001:10001
 EXPOSE 8080

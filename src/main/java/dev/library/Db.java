@@ -5,6 +5,7 @@ import java.util.*;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.stereotype.Component;
 
@@ -22,15 +23,16 @@ class Db {
     T run(Connection c) throws Exception;
   }
 
-  Db(DataSource source) {
+  Db(DataSource source,
+      @Value("${app.admin.username:}") String name,
+      @Value("${app.admin.password:}") String password) {
     this.source = source;
     write(c -> {
       if (one(c, "SELECT id FROM users LIMIT 1") == null) {
-        String name = System.getenv().getOrDefault("ADMIN_USER", ""),
-            password = System.getenv().getOrDefault("ADMIN_PASSWORD", "");
         if (!name.matches("[A-Za-z0-9_.-]{2,32}")
             || password.length() < 10 || password.length() > 128)
-          throw new IllegalArgumentException("Initial admin credentials required");
+          throw new IllegalArgumentException(
+              "Initial admin credentials required: set ADMIN_USER and ADMIN_PASSWORD (10-128 characters)");
         update(c, "INSERT INTO users(username,password_hash,role) VALUES (?,?,'admin')",
             name, Passwords.encode(password));
       }
@@ -42,7 +44,8 @@ class Db {
     return transaction(work, true);
   }
 
-  <T> T write(Work<T> work) {
+  // shortcut: file-based H2 uses one JVM; use a database lock if writes span processes.
+  synchronized <T> T write(Work<T> work) {
     return transaction(work, false);
   }
 
@@ -54,7 +57,8 @@ class Db {
       c.setAutoCommit(false);
       try {
         // shortcut: serialize this small team's writes across Pods; split locks if write waits grow.
-        if (!readOnly) one(c, "SELECT pg_advisory_xact_lock(714219801)");
+        if (!readOnly && "PostgreSQL".equals(c.getMetaData().getDatabaseProductName()))
+          one(c, "SELECT pg_advisory_xact_lock(714219801)");
         T value = work.run(c);
         c.commit();
         return value;
@@ -116,7 +120,14 @@ class Db {
   }
 
   static long insert(Connection c, String sql, Object... args) throws SQLException {
-    return ((Number) one(c, sql + " RETURNING id", args).get("id")).longValue();
+    try (PreparedStatement p = c.prepareStatement(sql, new String[] {"id"})) {
+      bind(p, args);
+      p.executeUpdate();
+      try (ResultSet keys = p.getGeneratedKeys()) {
+        if (!keys.next()) throw new SQLException("Insert did not return an id");
+        return keys.getLong(1);
+      }
+    }
   }
 
   Map<String, Object> backup() {

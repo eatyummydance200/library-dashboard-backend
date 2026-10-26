@@ -1,0 +1,29 @@
+server:
+  servlet:
+    context-path: ${APP_BASE_PATH:/library-dashboard}
+    session:
+      timeout: 12h
+      tracking-modes: cookie
+      cookie:
+        name: library_dashboard_session
+        max-age: 12h
+  tomcat:
+    threads:
+      max: 20
+
+spring:
+  profiles:
+    default: local
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  main:
+    banner-mode: "off"
+  datasource:
+    embedded-database-connection: none
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 5000
+  session:
+    jdbc:
+      initialize-schema: never

@@ -1,45 +1,59 @@
 # 인천대학교 연속간행물실 근무 대시보드 — Backend
 
-Java 21 · Spring Boot 4.1.2 · Gradle 9.7.1 · PostgreSQL 18 기반 API다.
+Java 21 · Spring Boot 4.1.2 · Gradle 9.7.1 기반 API다. 로컬은 파일 기반 H2, 운영은 PostgreSQL 18을 사용한다.
 프론트는 [별도 저장소](https://github.com/eatyummydance200/library-dashboard-frontend)에서 관리한다.
 
 ## 실행
 
 Java 21이 필요하다. Gradle은 Wrapper가 내려받는다. 포트는 **8080**, 기본 경로는 `/library-dashboard`다.
 
+로컬에서는 별도 DB 서버 없이 실행한다.
+
+```powershell
+.\gradlew.bat bootRun
+```
+
+IntelliJ에서는 별도 환경변수 없이 실행한다. 프로필을 지정하지 않으면 `local`로 시작한다. macOS/Linux에서는 `./gradlew bootRun`으로 실행한다. 로컬 빈 DB에는 `admin` / `local-admin-password` 개발 계정이 생성된다. `ADMIN_USER`, `ADMIN_PASSWORD`로 최초 계정을 바꿀 수 있으며, 기존 계정은 덮어쓰지 않는다. 이 기본 계정은 local 프로필에만 적용된다.
+
+H2는 실행 디렉터리의 `data/library-dashboard.mv.db`에 업무 데이터와 세션을 저장한다. 앱을 재시작해도 유지되며 `data/`는 Git과 Docker 빌드에서 제외된다. 같은 DB 파일은 앱 한 개에서만 연다. 로컬에서는 `DB_URL`, `DB_USER`, `DB_PASSWORD`를 사용하지 않는다.
+
+| 설정 파일 | 역할 |
+| --- | --- |
+| `application.yml` | 경로, 세션, DB 풀 등 공통 설정 |
+| `application-local.yml` | 파일 H2, HTTP용 쿠키 |
+| `application-prod.yml` | 필수 PostgreSQL 환경변수, Secure 쿠키, SQL 실행 제한 |
+
+기본 프로필은 `local`이다. 운영에서는 반드시 `SPRING_PROFILES_ACTIVE=prod`를 지정한다. 잘못된 프로필에서 임시 메모리 DB가 자동 생성되지 않도록 내장 DB 자동 선택은 꺼 두었다.
+
+Docker로 앱을 실행할 수도 있다. 별도 DB 컨테이너는 없으며 H2 파일은 `local-data` 볼륨에 남는다. 직접 실행한 H2 파일과 Docker 볼륨의 데이터는 서로 별개다.
+
 ```bash
 cp .env.example .env
-# .env의 DB_PASSWORD, ADMIN_USER, ADMIN_PASSWORD를 실제 개발용 값으로 변경
+# 선택 사항: 최초 개발 계정을 바꾸려면 .env를 수정한다.
 # Docker Compose는 .env를 자동으로 읽는다.
 docker compose up --build -d
 ```
 
-DB만 Docker로 띄우고 Java를 직접 실행할 수도 있다.
-
-```bash
-docker compose up -d postgres
-# .env 값들을 셸 환경변수로 설정한 뒤 실행한다. bootRun은 .env를 자동으로 읽지 않는다.
-./gradlew bootRun
-# Windows PowerShell: .\gradlew.bat bootRun
-```
+Compose는 `.env`를 읽지만 IntelliJ와 `bootRun`은 자동으로 읽지 않는다. 직접 실행할 때는 실행 구성이나 셸에서 환경변수를 설정한다.
 
 | 환경변수 | 설명 |
 | --- | --- |
-| `DB_URL` | JDBC 주소, 기본 `jdbc:postgresql://localhost:5432/library_dashboard` |
-| `DB_USER` | DB 계정, 기본 `library_dashboard` |
-| `DB_PASSWORD` | 필수 DB 비밀번호 |
-| `ADMIN_USER`, `ADMIN_PASSWORD` | 빈 DB의 최초 관리자. 아이디 영문·숫자 등 2~32자, 비밀번호 10~128자 |
+| `SPRING_PROFILES_ACTIVE` | `local` 또는 `prod`. Compose는 local, Kubernetes는 prod로 지정 |
+| `DB_URL` | 운영 필수 PostgreSQL JDBC 주소 |
+| `DB_USER` | 운영 필수 DB 계정 |
+| `DB_PASSWORD` | 운영 필수 DB 비밀번호 |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | 빈 DB의 최초 관리자. local은 기본 개발 계정 사용, prod는 필수. 아이디 영문·숫자 등 2~32자, 비밀번호 10~128자 |
 | `APP_BASE_PATH` | 기본 `/library-dashboard`, `/` + 영문·숫자·밑줄·하이픈 |
-| `COOKIE_SECURE` | 기본 `true`. 로컬 HTTP에서만 `false` |
 
 기존 사용자가 있으면 초기 관리자 환경변수로 덮어쓰지 않는다. 초기 시간표 JSON 자동 주입은 제거했다. 새 DB의 근무자는 API에서 등록하거나 아래 이관 도구로 가져온다.
 
 ```bash
 ./gradlew build
 java -jar build/libs/app.jar
+python scripts/check-local.py
 ```
 
-요청에 따라 테스트 소스와 테스트 의존성은 모두 제거했다. `build`와 CI는 컴파일·패키징을 확인한다.
+별도 테스트 프레임워크는 사용하지 않는다. `check-local.py`는 임시 H2 파일에서 프로필·관리자 환경변수 없는 로컬 시작, 기본 계정 로그인, 저장, 동시 요청, 오류 롤백, 재시작 후 데이터·세션·기존 관리자 유지와 운영 DB·최초 관리자 설정 누락 시 시작 실패를 확인한다. 개발 DB에는 접근하지 않으며 CI에서도 빌드 후 실행한다.
 
 ## API와 데이터
 
@@ -59,7 +73,7 @@ java -jar build/libs/app.jar
 
 위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다.
 
-세션은 PostgreSQL에 저장하며 여러 Pod 및 재시작 사이에 공유한다. 유효 기간은 12시간이다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션이 무효화된다. 쿠키 이름은 `library_dashboard_session`, HttpOnly·SameSite=Lax·운영 Secure다. 프론트 프록시는 쿠키와 CSRF 헤더를 전달해야 한다. 별도 CORS 허용은 없다.
+세션은 운영 PostgreSQL에 저장하며 여러 Pod 및 재시작 사이에 공유한다. 로컬 세션은 H2 파일에 저장해 재시작 후에도 유지한다. 유효 기간은 12시간이다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션이 무효화된다. 쿠키 이름은 `library_dashboard_session`, HttpOnly·SameSite=Lax·운영 Secure다. 프론트 프록시는 쿠키와 CSRF 헤더를 전달해야 한다. 별도 CORS 허용은 없다.
 
 프론트 개발 프록시의 대상 포트를 `http://127.0.0.1:8080`으로 바꾼다. 운영 프록시는 실제 Ingress 주소로 변경한다. 프론트 저장소는 이번 백엔드 변경에 포함하지 않는다.
 
@@ -68,11 +82,11 @@ java -jar build/libs/app.jar
 - 업무상의 `desk` 근무 역할은 유지한다. 제거 대상은 앱 배포 관리 기능이다.
 - 과월호는 재직 근무자 7명에게 배정한다. 담당 변경 시 항목 ID·완료 상태·완료자·시각을 보존한다. 근무자는 본인 담당만 완료 처리한다.
 - Flyway가 `src/main/resources/db/migration`의 버전별 SQL을 적용한다. 적용된 SQL은 수정하지 않고 새 버전을 추가한다.
-- 작은 팀을 기준으로 업무 쓰기를 PostgreSQL 트랜잭션 잠금 하나로 직렬화한다. Pod가 달라도 검사와 저장 사이에 다른 쓰기가 끼어들지 않는다. 읽기는 일관된 DB 스냅샷을 사용한다. 쓰기 대기가 커지면 업무별 잠금으로 분리한다.
+- 작은 팀을 기준으로 업무 쓰기를 직렬화한다. 운영에서는 PostgreSQL 트랜잭션 잠금이 Pod 사이의 쓰기를 보호하며, 파일 H2는 단일 JVM에서 쓰기를 직렬화한다. 읽기는 일관된 DB 스냅샷을 사용한다. 쓰기 대기가 커지면 업무별 잠금으로 분리한다.
 
 ## Kubernetes
 
-외부 또는 클러스터에서 관리하는 PostgreSQL을 사용한다. API Pod에는 DB 볼륨이나 Docker 소켓이 필요 없다.
+외부 또는 클러스터에서 관리하는 PostgreSQL을 사용한다. Deployment는 `SPRING_PROFILES_ACTIVE=prod`를 지정한다. API Pod에는 DB 볼륨이나 Docker 소켓이 필요 없다. 운영 DB 주소·계정·비밀번호에는 기본값이 없어 누락 시 시작하지 않는다. 기존 `COOKIE_SECURE` 환경변수는 사용하지 않으며 prod 쿠키는 Secure다.
 
 1. 운영 환경변수 파일을 저장소 밖에 만든다. `DB_URL`, `DB_USER`, `DB_PASSWORD`, 최초 관리자를 넣고 파일 권한을 제한한다.
 2. 같은 namespace에 Secret을 생성한다.
@@ -131,10 +145,12 @@ PR은 Gradle 빌드를 수행한다. main push/수동 실행은 빌드 후 GHCR�
 
 ```text
 src/main/java/dev/library/        API · 인증 · JDBC
-src/main/resources/db/migration/  PostgreSQL / 세션 스키마
+src/main/resources/application*.yml 공통 / local H2 / prod PostgreSQL 설정
+src/main/resources/db/migration/  공통 업무 / 세션 스키마
+scripts/check-local.py           임시 파일 H2 API / 재시작 검증
 scripts/import-data.py            SQLite v7 / JSON → 새 PostgreSQL
 k8s/deployment.yaml               Deployment · Service
-compose.yaml                     로컬 PostgreSQL · API
+compose.yaml                     로컬 API · 파일 H2 볼륨
 AUDIT.md                         개편 전 리뷰와 조치 결과
 ```
 

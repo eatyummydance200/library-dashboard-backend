@@ -1,32 +1,13 @@
 services:
-  postgres:
-    image: postgres:18
-    environment:
-      POSTGRES_DB: library_dashboard
-      POSTGRES_USER: ${DB_USER:-library_dashboard}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
   api:
     build: .
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/library_dashboard
-      DB_USER: ${DB_USER:-library_dashboard}
-      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
-      ADMIN_USER: ${ADMIN_USER:?Set ADMIN_USER in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
-      COOKIE_SECURE: "false"
+      SPRING_PROFILES_ACTIVE: local
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-admin-password}
     ports:
       - "127.0.0.1:8080:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - local-data:/app/data
 volumes:
-  postgres-data:
+  local-data:
