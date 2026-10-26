@@ -139,3 +139,17 @@ AUDIT.md                         개편 전 리뷰와 조치 결과
 ```
 
 커밋 제목은 기존 `이모지 태그 : 변경 내용` 형식을 따른다. 설정 `⚙️ Setting :`, 기능 `✨ Feature :`, 배포 `🌍 Ci :`, 수정 `🪲 Fix :`, 문서 `📄 Docs :`, 정리 `🔧 Chore :`, 개편 `🔨 Refactor :`를 쓴다.
+
+## 원본 근무표와 주당 근무 시간
+
+`V2__original_schedule.sql`이 합의한 원본과 주당 시간 조정값을 별도로 저장한다. 앱 재시작 시 Flyway가 적용한다. 실제 `shifts`의 수정·삭제·주 복사는 원본이나 조정값을 변경하지 않는다. 신규 테이블은 JSON 백업에도 포함한다.
+
+| 경로 (`/library-dashboard/api` 기준) | 동작 |
+| --- | --- |
+| `GET /schedule/original?week=YYYY-MM-DD` | 원본 조회. 미저장 주는 `saved: false`, `shifts: []` |
+| `PUT /schedule/original` | `{week, shifts}`로 원본 저장·교체. 실제 근무 ID는 재사용하지 않음 |
+| `GET /schedule/hours?week=YYYY-MM-DD` | `{overrides: [...]}`로 수동 조정값 조회 |
+| `PUT /schedule/hours/{staff_id}` | `{week, total_minutes, desk_minutes, opens, closes}` 저장 |
+| `DELETE /schedule/hours/{staff_id}?week=YYYY-MM-DD` | 조정값만 삭제해 원본 자동 계산으로 복원 |
+
+조회는 로그인, 저장·복원은 관리자 권한과 CSRF 토큰이 필요하다. 주는 월요일로 정규화한다. 원본은 해당 주의 평일·09:00~22:00·30분 단위·동일인 시간 겹침을 검증하고 트랜잭션으로 교체한다. 시간 조정은 0~3900분의 30분 단위, 데스크 시간은 총 시간 이하, 오픈·마감은 각각 0~5회다. 원본 재저장 시 수동 조정값은 유지된다. 기존 실제 근무표를 자동으로 원본으로 간주하지 않으며 관리자가 최초 원본을 저장한다.

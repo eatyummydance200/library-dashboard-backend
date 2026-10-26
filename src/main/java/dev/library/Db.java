@@ -14,7 +14,8 @@ class Db {
   private static final Logger LOG = LoggerFactory.getLogger(Db.class);
   private final DataSource source;
   static final List<String> TABLES = List.of(
-      "staff", "users", "teachers", "shifts", "issues", "monthly_tags",
+      "staff", "users", "teachers", "shifts", "original_schedule_weeks",
+      "original_shifts", "weekly_hour_overrides", "issues", "monthly_tags",
       "archive_draws", "archive_assignments", "archive_tasks", "duty_contact");
 
   interface Work<T> {

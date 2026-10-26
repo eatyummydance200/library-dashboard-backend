@@ -250,7 +250,102 @@ class Api {
                 shifts(c, start, start.plusDays(7))));
   }
 
-  static Object[] shift(Connection c, Map<String, Object> d, int exclude) throws SQLException {
+  @GetMapping("/api/schedule/original")
+  Object originalSchedule(@RequestParam(required = false) String week) {
+    LocalDate start = monday(week == null ? today() : week);
+    return db.read(c -> Map.of(
+        "week", start.toString(),
+        "saved", one(c, "SELECT week FROM original_schedule_weeks WHERE week=?", start.toString()) != null,
+        "staff", rows(c, "SELECT * FROM staff ORDER BY id"),
+        "shifts", rows(c, "SELECT * FROM original_shifts WHERE week=? ORDER BY day,start,id", start.toString())));
+  }
+
+  @PutMapping("/api/schedule/original")
+  Object saveOriginalSchedule(@RequestBody Map<String, Object> d, HttpServletRequest r) {
+    admin(r);
+    LocalDate start = monday(text(d.get("week"), "주", 10, true));
+    if (!(d.get("shifts") instanceof List<?> entries) || entries.size() > 10000)
+      throw new Failure(400, "원본 근무 목록을 확인해주세요.");
+    return db.write(c -> {
+      String week = start.toString(), updated = stamp();
+      Object author = user(r).get("id");
+      if (update(c, "UPDATE original_schedule_weeks SET updated_by=?,updated_at=? WHERE week=?",
+          author, updated, week) == 0)
+        update(c, "INSERT INTO original_schedule_weeks(week,updated_by,updated_at) VALUES (?,?,?)",
+            week, author, updated);
+      update(c, "DELETE FROM original_shifts WHERE week=?", week);
+      for (Object raw : entries) {
+        if (!(raw instanceof Map<?, ?> fields))
+          throw new Failure(400, "원본 근무 목록을 확인해주세요.");
+        var entry = new HashMap<String, Object>();
+        for (String key : List.of("staff_id", "day", "start", "end", "role"))
+          entry.put(key, fields.get(key));
+        Object[] values = shiftValues(c, entry);
+        LocalDate date = day(values[1]);
+        if (date.isBefore(start) || !date.isBefore(start.plusDays(5)))
+          fail("원본 근무는 선택한 주의 월요일부터 금요일까지만 저장할 수 있습니다.");
+        if (one(c, "SELECT id FROM original_shifts WHERE week=? AND day=? AND staff_id=? AND start<? AND \"end\">?",
+            week, values[1], values[0], values[3], values[2]) != null)
+          throw new Failure(409, "같은 사람의 원본 근무 시간이 겹칩니다.");
+        update(c, "INSERT INTO original_shifts(week,staff_id,day,start,\"end\",role) VALUES (?,?,?,?,?,?)",
+            week, values[0], values[1], values[2], values[3], values[4]);
+      }
+      return ok();
+    });
+  }
+
+  @GetMapping("/api/schedule/hours")
+  Object weeklyHours(@RequestParam(required = false) String week) {
+    String start = monday(week == null ? today() : week).toString();
+    return db.read(c -> Map.of("overrides", rows(c,
+        "SELECT staff_id,total_minutes,desk_minutes,opens,closes FROM weekly_hour_overrides WHERE week=? ORDER BY staff_id",
+        start)));
+  }
+
+  static int boundedInteger(Object value, String label, int maximum) {
+    if (!integer(value) || ((Number) value).longValue() < 0 || ((Number) value).longValue() > maximum)
+      throw new Failure(400, label + "을(를) 확인해주세요.");
+    return number(value);
+  }
+
+  @PutMapping("/api/schedule/hours/{id}")
+  Object saveWeeklyHours(@PathVariable int id, @RequestBody Map<String, Object> d, HttpServletRequest r) {
+    admin(r);
+    String week = monday(text(d.get("week"), "주", 10, true)).toString();
+    int total = boundedInteger(d.get("total_minutes"), "총 근무 시간", 3900),
+        desk = boundedInteger(d.get("desk_minutes"), "데스크 시간", 3900),
+        opens = boundedInteger(d.get("opens"), "오픈 횟수", 5),
+        closes = boundedInteger(d.get("closes"), "마감 횟수", 5);
+    if (total % 30 != 0 || desk % 30 != 0 || desk > total)
+      fail("시간은 30분 단위이며 데스크 시간은 총 근무 시간을 초과할 수 없습니다.");
+    return db.write(c -> {
+      if (one(c, "SELECT week FROM original_schedule_weeks WHERE week=?", week) == null)
+        throw new Failure(409, "원본 근무 시간표를 먼저 저장해주세요.");
+      if (one(c, "SELECT id FROM staff WHERE id=?", id) == null)
+        throw new Failure(404, "근무자를 찾을 수 없습니다.");
+      String updated = stamp();
+      Object author = user(r).get("id");
+      if (update(c,
+          "UPDATE weekly_hour_overrides SET total_minutes=?,desk_minutes=?,opens=?,closes=?,updated_by=?,updated_at=? WHERE week=? AND staff_id=?",
+          total, desk, opens, closes, author, updated, week, id) == 0)
+        update(c,
+            "INSERT INTO weekly_hour_overrides(week,staff_id,total_minutes,desk_minutes,opens,closes,updated_by,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            week, id, total, desk, opens, closes, author, updated);
+      return ok();
+    });
+  }
+
+  @DeleteMapping("/api/schedule/hours/{id}")
+  Object resetWeeklyHours(@PathVariable int id, @RequestParam String week, HttpServletRequest r) {
+    admin(r);
+    String start = monday(week).toString();
+    return db.write(c -> {
+      update(c, "DELETE FROM weekly_hour_overrides WHERE week=? AND staff_id=?", start, id);
+      return ok();
+    });
+  }
+
+  static Object[] shiftValues(Connection c, Map<String, Object> d) throws SQLException {
     LocalDate day = day(d.get("day"));
     Object id = d.get("staff_id"), start = d.get("start"), end = d.get("end"), role = d.get("role");
     if (day.getDayOfWeek().getValue() > 5 || !integer(id) || !integer(start) || !integer(end))
@@ -265,16 +360,16 @@ class Api {
         || !List.of("desk", "general").contains(role)) fail("근무 시간은 09:00~22:00 사이의 30분 단위입니다.");
     if (one(c, "SELECT id FROM staff WHERE id=? AND active=1", id) == null)
       fail("재직 중인 근무자를 선택해주세요.");
-    if (one(
-            c,
-            "SELECT id FROM shifts WHERE day=? AND staff_id=? AND start<? AND \"end\">? AND id<>?",
-            day.toString(),
-            id,
-            end,
-            start,
-            exclude)
-        != null) throw new Failure(409, "같은 사람의 근무 시간이 겹칩니다.");
     return new Object[] {id, day.toString(), start, end, role};
+  }
+
+  static Object[] shift(Connection c, Map<String, Object> d, int exclude) throws SQLException {
+    Object[] values = shiftValues(c, d);
+    if (one(c,
+        "SELECT id FROM shifts WHERE day=? AND staff_id=? AND start<? AND \"end\">? AND id<>?",
+        values[1], values[0], values[3], values[2], exclude) != null)
+      throw new Failure(409, "같은 사람의 근무 시간이 겹칩니다.");
+    return values;
   }
 
   @PostMapping("/api/shifts")
