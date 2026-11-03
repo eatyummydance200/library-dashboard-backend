@@ -42,3 +42,17 @@ jobs:
           tags: |
             ghcr.io/eatyummydance200/library-dashboard:main
             ghcr.io/eatyummydance200/library-dashboard:${{ github.sha }}
+  manifest:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sed -i "s#image: ghcr.io/eatyummydance200/library-dashboard:.*#image: ghcr.io/eatyummydance200/library-dashboard:${GITHUB_SHA}#" k8s/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "🌍 Ci : 배포 이미지 ${GITHUB_SHA::7} 반영 [skip ci]"
+          git pull --rebase && git push

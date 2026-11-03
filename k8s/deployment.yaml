@@ -26,32 +26,40 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/eatyummydance200/library-dashboard:main
-          imagePullPolicy: Always
+          image: ghcr.io/eatyummydance200/library-dashboard:6935b9bcce9ce2273a2b9efc4115c3ce4f645e35
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
+            - name: metrics
+              containerPort: 8081
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: prod
+            - name: MONITORING_SCRAPE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: app-metrics
+                  key: token
           envFrom:
             - secretRef:
                 name: library-dashboard
           startupProbe:
             httpGet:
-              path: /library-dashboard/actuator/health/liveness
-              port: http
+              path: /actuator/health/liveness
+              port: metrics
             periodSeconds: 5
             failureThreshold: 30
           livenessProbe:
             httpGet:
-              path: /library-dashboard/actuator/health/liveness
-              port: http
+              path: /actuator/health/liveness
+              port: metrics
             periodSeconds: 10
+            failureThreshold: 6
           readinessProbe:
             httpGet:
-              path: /library-dashboard/actuator/health/readiness
-              port: http
+              path: /actuator/health/readiness
+              port: metrics
             periodSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
@@ -78,9 +86,25 @@ kind: Service
 metadata:
   name: library-dashboard
 spec:
+  # The host socket proxy (library-dashboard-proxy) forwards to this fixed IP.
+  clusterIP: 10.96.20.10
   selector:
     app: library-dashboard
   ports:
     - name: http
       port: 8080
       targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: library-dashboard-metrics
+  labels:
+    app: library-dashboard-metrics
+spec:
+  selector:
+    app: library-dashboard
+  ports:
+    - name: metrics
+      port: 8081
+      targetPort: metrics

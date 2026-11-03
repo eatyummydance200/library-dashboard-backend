@@ -79,18 +79,13 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 
 외부 또는 클러스터에서 관리하는 PostgreSQL을 사용한다. Deployment는 `SPRING_PROFILES_ACTIVE=prod`를 지정한다. API Pod에는 DB 볼륨이나 Docker 소켓이 필요 없다. 운영 DB 주소·계정·비밀번호에는 기본값이 없어 누락 시 시작하지 않는다. 기존 `COOKIE_SECURE` 환경변수는 사용하지 않으며 prod 쿠키는 Secure다.
 
-1. 운영 환경변수 파일을 저장소 밖에 만든다. `DB_URL`, `DB_USER`, `DB_PASSWORD`를 넣고 파일 권한을 제한한다.
-2. 같은 namespace에 Secret을 생성한다.
-3. CI가 만든 커밋 SHA 이미지로 배포한다.
+운영은 홈서버 단일 노드 클러스터의 `library-dashboard` namespace이며 Argo CD가 `k8s/`를 자동 동기화한다.
+main에 push하면 CI가 이미지를 GHCR에 게시하고 `k8s/deployment.yaml`의 image 태그를 커밋 SHA로 바꿔 커밋한다.
+Argo CD가 이 변경을 감지해 반영한다. Application 정의는 `argocd/application.yaml`이다.
 
-```bash
-kubectl create secret generic library-dashboard --from-env-file=/private/library-dashboard.env
-# k8s/deployment.yaml의 image 태그를 배포할 커밋 SHA로 변경
-kubectl apply -f k8s/deployment.yaml
-kubectl rollout status deployment/library-dashboard
-```
+Secret `library-dashboard`(`DB_URL`, `DB_USER`, `DB_PASSWORD`)와 `app-metrics`(`token`)는 클러스터에서 직접 관리한다.
 
-예시는 Deployment 2 replicas + ClusterIP Service 8080이다. 읽기 전용 루트 파일시스템, UID 10001, 임시 `/tmp` 볼륨, 리소스 제한을 포함한다. 30초 종료 유예 중 Spring은 최대 20초간 진행 중 요청을 마무리한다.
+Deployment 2 replicas, ClusterIP Service 8080(호스트 프록시용 고정 IP `10.96.20.10`), 지표 Service 8081이다. 읽기 전용 루트 파일시스템, UID 10001, 임시 `/tmp` 볼륨, 리소스 제한을 포함한다. 30초 종료 유예 중 Spring은 최대 20초간 진행 중 요청을 마무리한다.
 
 스키마 변경으로 구 JDBC 버전과 새 JPA 버전을 동시에 실행할 수 없으므로 Deployment 전략은
 `Recreate`다. 적용 전에 DB 스냅샷을 확보하고 해당 DB를 사용하는 구 버전 쓰기 프로세스를 모두
@@ -99,16 +94,16 @@ V3 적용 후 구 이미지로만 되돌리는 방식은 지원하지 않는다.
 
 | Probe | 경로 | 의미 |
 | --- | --- | --- |
-| startup / liveness | `/library-dashboard/actuator/health/liveness` | JVM·앱 생존, DB 장애로 재시작하지 않음 |
-| readiness | `/library-dashboard/actuator/health/readiness` | DB를 사용할 수 있어야 요청 전달 |
+| startup / liveness | 관리 포트 8081 `/actuator/health/liveness` | JVM·앱 생존, DB 장애로 재시작하지 않음 |
+| readiness | 관리 포트 8081 `/actuator/health/readiness` | DB를 사용할 수 있어야 요청 전달 |
 
-`APP_BASE_PATH`를 바꾸면 probe 경로도 바꾼다. Pod당 DB 풀은 최대 5개다. Pod 수와 PostgreSQL 연결 한도를 함께 잡는다. HTTPS Ingress의 호스트·인증서·DB 주소는 클러스터에 맞게 설정한다. Ingress는 기본 경로를 제거하지 않고 Service 8080으로 전달한다. 첫 배포 전 Secret과 이미지를 준비해야 한다.
+Pod당 DB 풀은 최대 5개다. 외부 노출은 Ingress 없이 호스트 프록시(127.0.0.1:18080 → 10.96.20.10:8080)와 Tailscale Funnel을 쓴다. `/actuator/prometheus`는 8081에서 `MONITORING_SCRAPE_TOKEN` Bearer 인증이 필요하다.
 
 ## CI와 구조
 
 PR은 Gradle 빌드를 수행한다. main push/수동 실행은 빌드 성공 후
 Dockerfile로 이미지를 빌드해 GHCR에 `main` 및 커밋 SHA 태그로 게시한다.
-워크플로는 Kubernetes에 자동 배포하지 않으며 클러스터 반영은 배포 관리자가 수행한다.
+이어서 `k8s/deployment.yaml`의 image 태그를 갱신해 커밋하고, 클러스터 반영은 Argo CD가 수행한다.
 
 ```text
 src/main/java/dev/library/        기능별 Controller · Service · Repository
