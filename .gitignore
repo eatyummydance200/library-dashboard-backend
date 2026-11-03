@@ -10,7 +10,6 @@ __pycache__/
 /target/
 
 .env*
-!.env.example
 /.gradle/
 /build/
 /.verification/

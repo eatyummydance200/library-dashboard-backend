@@ -4,6 +4,8 @@ metadata:
   name: library-dashboard
 spec:
   replicas: 2
+  strategy:
+    type: Recreate
   revisionHistoryLimit: 3
   selector:
     matchLabels:

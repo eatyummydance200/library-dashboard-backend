@@ -12,6 +12,10 @@ server:
       max: 20
 
 spring:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
   profiles:
     default: local
   lifecycle:

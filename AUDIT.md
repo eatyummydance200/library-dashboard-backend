@@ -1,5 +1,10 @@
 What this repo does: This API manages a library team’s shifts, contacts, issues, tagging, and newspaper archive work. Admins manage people and assignments. Workers use cookie sessions to update their work.
 
+Historical report: the JSON download API, data importer, and local Docker Compose configuration
+described below were subsequently removed. Local development uses H2, and production uses Kubernetes.
+Python verification scripts were also subsequently removed. Current CI performs a Gradle build;
+use README.md for the current setup.
+
 Assumed load: one small library team, with two or more API Pods behind a proxy and one shared PostgreSQL database. This is an audit of commit c8ad548 before the requested changes. Each fix below is included in this branch.
 
 ## Must fix
