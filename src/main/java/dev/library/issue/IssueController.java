@@ -42,8 +42,4 @@ public class IssueController {
     return service.update(id, d, (CurrentUser) r.getAttribute("user"));
   }
 
-  @PostMapping("/api/issues/{id}/apply")
-  Object apply(@PathVariable long id, @RequestBody Map<String, Object> d, HttpServletRequest r) {
-    return service.apply(id, d, (CurrentUser) r.getAttribute("user"));
-  }
 }

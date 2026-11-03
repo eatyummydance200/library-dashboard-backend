@@ -1,8 +1,5 @@
 package dev.library.issue;
 
-import dev.library.schedule.Shift;
-import dev.library.schedule.ShiftRole;
-import dev.library.staff.Staff;
 import dev.library.user.User;
 
 import jakarta.persistence.*;
@@ -34,24 +31,6 @@ public class Issue {
 
   @Column(name = "done", nullable = false)
   private boolean done;
-
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "shift_id")
-  private Shift shift;
-
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "shift_staff_id")
-  private Staff shiftStaff;
-
-  @Column(name = "shift_start")
-  private Integer shiftStart;
-
-  @Column(name = "shift_end")
-  private Integer shiftEnd;
-
-  @Enumerated(EnumType.STRING)
-  @Column(name = "shift_role", length = 16)
-  private ShiftRole shiftRole;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -111,34 +90,6 @@ public class Issue {
 
   public void setDone(boolean done) {
     this.done = done;
-  }
-
-  public Shift getShift() {
-    return shift;
-  }
-
-  public Staff getShiftStaff() {
-    return shiftStaff;
-  }
-
-  public Integer getShiftStart() {
-    return shiftStart;
-  }
-
-  public Integer getShiftEnd() {
-    return shiftEnd;
-  }
-
-  public ShiftRole getShiftRole() {
-    return shiftRole;
-  }
-
-  public void setShift(Shift shift) {
-    this.shift = shift;
-    this.shiftStaff = shift.getStaff();
-    this.shiftStart = shift.getStart();
-    this.shiftEnd = shift.getEnd();
-    this.shiftRole = shift.getRole();
   }
 
   public Instant getCreatedAt() {
