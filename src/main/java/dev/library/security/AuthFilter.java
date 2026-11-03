@@ -11,6 +11,7 @@ import jakarta.servlet.http.*;
 import java.io.*;
 import java.util.*;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,9 +21,21 @@ class AuthFilter extends OncePerRequestFilter {
   private final SessionAuthService service;
   private final ObjectMapper mapper;
 
+  @Value("${management.server.port:8081}")
+  private int managementPort;
+
+  @Value("${server.port:8080}")
+  private int applicationPort;
+
   AuthFilter(SessionAuthService service, ObjectMapper mapper) {
     this.service = service;
     this.mapper = mapper;
+  }
+
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    // The separate management context has its own bearer-token filter.
+    return managementPort != applicationPort && request.getLocalPort() == managementPort;
   }
 
   @Override
