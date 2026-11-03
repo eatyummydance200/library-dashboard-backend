@@ -108,6 +108,17 @@ public class IssueService {
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
+  public Object delete(long id, CurrentUser actor) {
+    lock.acquire();
+    var issue = repository.findById(id).orElse(null);
+    if (issue == null) return ok();
+    if (!"admin".equals(actor.role()) && (issue.isDone() || !issue.getAuthor().getId().equals(actor.id())))
+      throw new AppException(403, "진행 중인 본인 이슈만 삭제할 수 있습니다.");
+    repository.delete(issue);
+    return ok();
+  }
+
+  @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object update(long id, Map<String, Object> body, CurrentUser actor) {
     String title = text(body.get("title"), "제목", 80, true);
     String contents = text(body.get("body"), "내용", 1500, true);

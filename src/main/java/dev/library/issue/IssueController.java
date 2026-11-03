@@ -32,6 +32,11 @@ public class IssueController {
     return service.toggleIssue(id, d, (CurrentUser) r.getAttribute("user"));
   }
 
+  @DeleteMapping("/api/issues/{id}")
+  Object deleteIssue(@PathVariable long id, HttpServletRequest r) {
+    return service.delete(id, (CurrentUser) r.getAttribute("user"));
+  }
+
   @PutMapping("/api/issues/{id}")
   Object updateIssue(@PathVariable long id, @RequestBody Map<String, Object> d, HttpServletRequest r) {
     return service.update(id, d, (CurrentUser) r.getAttribute("user"));
