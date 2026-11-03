@@ -97,11 +97,35 @@ public class IssueService {
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
-  public Object toggleIssue(long id, Map<String, Object> body) {
+  public Object toggleIssue(long id, Map<String, Object> body, CurrentUser actor) {
     boolean done = bool(body.get("done"), "이슈 상태를 확인해주세요.");
     lock.acquire();
     var issue = repository.findById(id).orElseThrow(() -> new AppException(404, "이슈를 찾을 수 없습니다."));
+    if (issue.getShiftStart() != null) actor.requireAdmin();
     issue.setDone(done);
+    issue.setUpdatedAt(Instant.now());
+    return ok();
+  }
+
+  @Transactional(isolation = Isolation.READ_COMMITTED)
+  public Object update(long id, Map<String, Object> body, CurrentUser actor) {
+    String title = text(body.get("title"), "제목", 80, true);
+    String contents = text(body.get("body"), "내용", 1500, true);
+    lock.acquire();
+    var issue = repository.findById(id).orElseThrow(() -> new AppException(404, "이슈를 찾을 수 없습니다."));
+    if (!"admin".equals(actor.role()) && !issue.getAuthor().getId().equals(actor.id()))
+      throw new AppException(403, "작성자나 관리자만 수정할 수 있습니다.");
+    if (issue.isDone()) throw new AppException(409, "완료된 이슈는 다시 연 뒤 수정해주세요.");
+    // Shift change requests keep their day and category; only the text is editable.
+    if (issue.getShiftStart() == null) {
+      Object category = body.get("category");
+      if (category == null || !CATEGORIES.contains(category) || "근무 변경".equals(category))
+        fail("이슈 구분을 확인해주세요.");
+      issue.setDay(day(body.get("day")));
+      issue.setCategory((String) category);
+    }
+    issue.setTitle(title);
+    issue.setBody(contents);
     issue.setUpdatedAt(Instant.now());
     return ok();
   }

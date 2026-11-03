@@ -28,8 +28,13 @@ public class IssueController {
   }
 
   @PatchMapping("/api/issues/{id}")
-  Object toggleIssue(@PathVariable long id, @RequestBody Map<String, Object> d) {
-    return service.toggleIssue(id, d);
+  Object toggleIssue(@PathVariable long id, @RequestBody Map<String, Object> d, HttpServletRequest r) {
+    return service.toggleIssue(id, d, (CurrentUser) r.getAttribute("user"));
+  }
+
+  @PutMapping("/api/issues/{id}")
+  Object updateIssue(@PathVariable long id, @RequestBody Map<String, Object> d, HttpServletRequest r) {
+    return service.update(id, d, (CurrentUser) r.getAttribute("user"));
   }
 
   @PostMapping("/api/issues/{id}/apply")
