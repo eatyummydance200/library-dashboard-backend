@@ -20,8 +20,8 @@ public class ScheduleController {
   }
 
   @GetMapping("/api/schedule/original")
-  Object originalSchedule(@RequestParam(required = false) String week) {
-    return service.originalSchedule(week);
+  Object originalSchedule() {
+    return service.originalSchedule();
   }
 
   @PutMapping("/api/schedule/original")
@@ -30,8 +30,8 @@ public class ScheduleController {
   }
 
   @GetMapping("/api/schedule/hours")
-  Object weeklyHours(@RequestParam(required = false) String week) {
-    return service.weeklyHours(week);
+  Object weeklyHours() {
+    return service.weeklyHours();
   }
 
   @PutMapping("/api/schedule/hours/{id}")
@@ -40,8 +40,8 @@ public class ScheduleController {
   }
 
   @DeleteMapping("/api/schedule/hours/{id}")
-  Object resetWeeklyHours(@PathVariable long id, @RequestParam String week, HttpServletRequest r) {
-    return service.resetWeeklyHours(id, week, (CurrentUser) r.getAttribute("user"));
+  Object resetWeeklyHours(@PathVariable long id, HttpServletRequest r) {
+    return service.resetWeeklyHours(id, (CurrentUser) r.getAttribute("user"));
   }
 
   @PostMapping("/api/shifts")

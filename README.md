@@ -161,16 +161,17 @@ Flyway는 DB 스키마만 적용하며 계정을 생성하지 않는다. 새 DB�
 
 커밋 제목은 기존 `이모지 태그 : 변경 내용` 형식을 따른다. 설정 `⚙️ Setting :`, 기능 `✨ Feature :`, 배포 `🌍 Ci :`, 수정 `🪲 Fix :`, 문서 `📄 Docs :`, 정리 `🔧 Chore :`, 개편 `🔨 Refactor :`를 쓴다.
 
-## 원본 근무표와 주당 근무 시간
+## 확정된 근무 시간표와 주당 근무 시간
 
-`V2__original_schedule.sql`이 합의한 원본과 주당 시간 조정값을 별도로 저장한다. 앱 재시작 시 Flyway가 적용한다. 실제 `shifts`의 수정·삭제·주 복사는 원본이나 조정값을 변경하지 않는다.
+확정된 근무 시간표는 근무 전에 합의한 요일(월~금) 기준 표 1개로 `confirmed_shifts`에 저장한다. 매주 `POST /schedule/original/copy`로 대상 주의 `shifts`에 복사한다. 주당 근무 시간은 확정표로 계산하고, 근무자별 조정값은 주와 무관하게 `staff_hour_overrides`에 하나씩 둔다. `V5__confirmed_schedule.sql`이 기존 주별 원본 중 가장 최근 주를 요일 기준으로 옮기고 이전 테이블을 삭제한다. 실제 `shifts`의 수정·삭제는 확정표와 조정값을 바꾸지 않는다.
 
 | 경로 (`/library-dashboard/api` 기준) | 동작 |
 | --- | --- |
-| `GET /schedule/original?week=YYYY-MM-DD` | 원본 조회. 미저장 주는 `saved: false`, `shifts: []` |
-| `PUT /schedule/original` | `{week, shifts}`로 원본 저장·교체. 실제 근무 ID는 재사용하지 않음 |
-| `GET /schedule/hours?week=YYYY-MM-DD` | `{overrides: [...]}`로 수동 조정값 조회 |
-| `PUT /schedule/hours/{staff_id}` | `{week, total_minutes, desk_minutes, opens, closes}` 저장 |
-| `DELETE /schedule/hours/{staff_id}?week=YYYY-MM-DD` | 조정값만 삭제해 원본 자동 계산으로 복원 |
+| `GET /schedule/original` | 확정표 조회. `shifts[].weekday`는 1(월)~5(금), 비어 있으면 `saved: false` |
+| `PUT /schedule/original` | `{shifts: [{staff_id, weekday, start, end, role}]}`로 전체 교체 |
+| `POST /schedule/original/copy` | `{target, overwrite}`. 대상 주에 근무가 있고 overwrite가 아니면 `{ok: false, existing}`. 퇴직자 근무는 빼고 `{ok: true, count, skipped}` |
+| `GET /schedule/hours` | `{overrides: [...]}`로 조정값 조회 |
+| `PUT /schedule/hours/{staff_id}` | `{total_minutes, desk_minutes, opens, closes}` 저장 |
+| `DELETE /schedule/hours/{staff_id}` | 조정값을 지워 확정표 계산값으로 복원 |
 
-조회는 로그인, 저장·복원은 관리자 권한과 CSRF 토큰이 필요하다. 주는 월요일로 정규화한다. 원본은 해당 주의 평일·09:00~22:00·30분 단위·동일인 시간 겹침을 검증하고 트랜잭션으로 교체한다. 시간 조정은 0~3900분의 30분 단위, 데스크 시간은 총 시간 이하, 오픈·마감은 각각 0~5회다. 원본 재저장 시 수동 조정값은 유지된다. 기존 실제 근무표를 자동으로 원본으로 간주하지 않으며 관리자가 최초 원본을 저장한다.
+조회는 로그인, 저장·복사·복원은 관리자 권한과 CSRF 토큰이 필요하다. 확정표는 09:00~22:00·30분 단위·같은 사람 같은 요일 겹침을 검증하고 한 트랜잭션으로 교체한다. 퇴직자의 기존 확정 근무는 유지할 수 있다. 시간 조정은 0~3900분의 30분 단위, 데스크 시간은 총 시간 이하, 오픈·마감은 각각 0~5회다.

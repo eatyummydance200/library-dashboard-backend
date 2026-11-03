@@ -11,7 +11,6 @@ import dev.library.staff.StaffRepository;
 import dev.library.staff.StaffResponse;
 import dev.library.user.UserRepository;
 import java.time.*;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -21,19 +20,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class ScheduleService {
   private final ShiftRepository shifts;
-  private final OriginalScheduleWeekRepository weeks;
-  private final OriginalShiftRepository originals;
-  private final WeeklyHourOverrideRepository hours;
+  private final ConfirmedShiftRepository confirmed;
+  private final StaffHourOverrideRepository hours;
   private final StaffRepository staff;
   private final UserRepository users;
   private final WriteLock lock;
 
-  public ScheduleService(ShiftRepository shifts, OriginalScheduleWeekRepository weeks,
-      OriginalShiftRepository originals, WeeklyHourOverrideRepository hours,
-      StaffRepository staff, UserRepository users, WriteLock lock) {
+  public ScheduleService(ShiftRepository shifts, ConfirmedShiftRepository confirmed,
+      StaffHourOverrideRepository hours, StaffRepository staff, UserRepository users, WriteLock lock) {
     this.shifts = shifts;
-    this.weeks = weeks;
-    this.originals = originals;
+    this.confirmed = confirmed;
     this.hours = hours;
     this.staff = staff;
     this.users = users;
@@ -54,70 +50,57 @@ public class ScheduleService {
         "shifts", shifts(start, start.plusDays(7)).stream().map(ShiftResponse::from).toList());
   }
 
-  public Object originalSchedule(String week) {
-    LocalDate start = week(week);
-    var saved = weeks.findByWeek(start).orElse(null);
-    return Map.of("week", start, "saved", saved != null,
+  public Object originalSchedule() {
+    var entries = confirmed.findAllByOrderByWeekdayAscStartAscIdAsc();
+    return Map.of("saved", !entries.isEmpty(),
         "staff", staff.findAllByOrderByIdAsc().stream().map(StaffResponse::from).toList(),
-        "shifts", saved == null ? List.of() : originals.findByScheduleWeekIdOrderByDayAscStartAscIdAsc(saved.getId())
-            .stream().map(OriginalShiftResponse::from).toList());
+        "shifts", entries.stream().map(ConfirmedShiftResponse::from).toList());
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object saveOriginalSchedule(Map<String, Object> body, CurrentUser actor) {
     actor.requireAdmin();
-    LocalDate start = monday(text(body.get("week"), "주", 10, true));
     if (!(body.get("shifts") instanceof List<?> raw) || raw.size() > 10000)
-      throw new AppException(400, "원본 근무 목록을 확인해주세요.");
+      throw new AppException(400, "확정 근무 목록을 확인해주세요.");
     lock.acquire();
-    var entries = new ArrayList<ShiftInput>();
-    for (Object value : (List<?>) body.get("shifts")) {
-      if (!(value instanceof Map<?, ?> fields)) throw new AppException(400, "원본 근무 목록을 확인해주세요.");
+    var entries = new ArrayList<ConfirmedShift>();
+    for (Object value : raw) {
+      if (!(value instanceof Map<?, ?> fields)) throw new AppException(400, "확정 근무 목록을 확인해주세요.");
+      Object weekday = fields.get("weekday");
+      if (!integer(weekday) || ((Number) weekday).longValue() < 1 || ((Number) weekday).longValue() > 5)
+        fail("확정 근무는 월요일부터 금요일까지만 저장할 수 있습니다.");
       var values = new HashMap<String, Object>();
-      for (String key : List.of("staff_id", "day", "start", "end", "role")) values.put(key, fields.get(key));
-      var input = input(values);
-      if (input.day().isBefore(start) || !input.day().isBefore(start.plusDays(5)))
-        fail("원본 근무는 선택한 주의 월요일부터 금요일까지만 저장할 수 있습니다.");
-      entries.add(input);
-    }
-    var sorted = entries.stream().sorted(Comparator.comparing(ShiftInput::day)
-        .thenComparing(input -> input.staff().getId()).thenComparingInt(ShiftInput::start)).toList();
-    for (int i = 1; i < sorted.size(); i++) {
-      var previous = sorted.get(i - 1);
-      var current = sorted.get(i);
-      if (previous.day().equals(current.day()) && previous.staff().getId().equals(current.staff().getId())
-          && previous.end() > current.start()) throw new AppException(409, "같은 사람의 원본 근무 시간이 겹칩니다.");
-    }
-    var saved = weeks.findByWeek(start).orElseGet(OriginalScheduleWeek::new);
-    saved.setWeek(start);
-    saved.setUpdatedBy(users.getReferenceById(actor.id()));
-    saved.setUpdatedAt(Instant.now());
-    weeks.saveAndFlush(saved);
-    originals.deleteByScheduleWeekId(saved.getId());
-    originals.flush();
-    for (var input : entries) {
-      var shift = new OriginalShift();
-      shift.setScheduleWeek(saved);
+      for (String key : List.of("staff_id", "start", "end", "role")) values.put(key, fields.get(key));
+      // Retired staff may stay in the confirmed table; copying skips them.
+      var input = input(values, false);
+      var shift = new ConfirmedShift();
       shift.setStaff(input.staff());
-      shift.setDay(input.day());
+      shift.setWeekday(number(weekday));
       shift.setStart(input.start());
       shift.setEnd(input.end());
       shift.setRole(input.role());
-      originals.save(shift);
+      entries.add(shift);
     }
+    var sorted = entries.stream().sorted(Comparator.comparingInt(ConfirmedShift::getWeekday)
+        .thenComparing(shift -> shift.getStaff().getId()).thenComparingInt(ConfirmedShift::getStart)).toList();
+    for (int i = 1; i < sorted.size(); i++) {
+      var previous = sorted.get(i - 1);
+      var current = sorted.get(i);
+      if (previous.getWeekday() == current.getWeekday() && previous.getStaff().getId().equals(current.getStaff().getId())
+          && previous.getEnd() > current.getStart()) throw new AppException(409, "같은 사람의 확정 근무 시간이 겹칩니다.");
+    }
+    confirmed.deleteAllInBatch();
+    confirmed.saveAll(entries);
     return ok();
   }
 
-  public Object weeklyHours(String week) {
-    var saved = weeks.findByWeek(week(week)).orElse(null);
-    return Map.of("overrides", saved == null ? List.of() :
-        hours.findByScheduleWeekIdOrderByStaffIdAsc(saved.getId()).stream().map(WeeklyHoursResponse::from).toList());
+  public Object weeklyHours() {
+    return Map.of("overrides", hours.findAllByOrderByStaffIdAsc().stream().map(StaffHoursResponse::from).toList());
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object saveWeeklyHours(long id, Map<String, Object> body, CurrentUser actor) {
     actor.requireAdmin();
-    LocalDate week = monday(text(body.get("week"), "주", 10, true));
     int total = boundedInteger(body.get("total_minutes"), "총 근무 시간", 3900);
     int desk = boundedInteger(body.get("desk_minutes"), "데스크 시간", 3900);
     int opens = boundedInteger(body.get("opens"), "오픈 횟수", 5);
@@ -125,10 +108,8 @@ public class ScheduleService {
     if (total % 30 != 0 || desk % 30 != 0 || desk > total)
       fail("시간은 30분 단위이며 데스크 시간은 총 근무 시간을 초과할 수 없습니다.");
     lock.acquire();
-    var saved = weeks.findByWeek(week).orElseThrow(() -> new AppException(409, "원본 근무 시간표를 먼저 저장해주세요."));
     var person = staff.findById(id).orElseThrow(() -> new AppException(404, "근무자를 찾을 수 없습니다."));
-    var value = hours.findByScheduleWeekIdAndStaffId(saved.getId(), id).orElseGet(WeeklyHourOverride::new);
-    value.setScheduleWeek(saved);
+    var value = hours.findByStaffId(id).orElseGet(StaffHourOverride::new);
     value.setStaff(person);
     value.setTotalMinutes(total);
     value.setDeskMinutes(desk);
@@ -141,35 +122,35 @@ public class ScheduleService {
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
-  public Object resetWeeklyHours(long id, String week, CurrentUser actor) {
+  public Object resetWeeklyHours(long id, CurrentUser actor) {
     actor.requireAdmin();
-    LocalDate start = monday(week);
     lock.acquire();
-    weeks.findByWeek(start).flatMap(saved -> hours.findByScheduleWeekIdAndStaffId(saved.getId(), id)).ifPresent(hours::delete);
+    hours.findByStaffId(id).ifPresent(hours::delete);
     return ok();
   }
 
-  private ShiftInput input(Map<String, Object> body) {
-    LocalDate day = day(body.get("day"));
-    if (day.getDayOfWeek().getValue() > 5 || !integer(body.get("staff_id"))
-        || !integer(body.get("start")) || !integer(body.get("end")))
-      fail("평일 날짜와 근무자·시간을 확인해주세요.");
+  private ShiftInput input(Map<String, Object> body, boolean active) {
+    if (!integer(body.get("staff_id")) || !integer(body.get("start")) || !integer(body.get("end")))
+      fail("근무자와 시간을 확인해주세요.");
     long staffId = id(body.get("staff_id"), "근무자");
     long start = ((Number) body.get("start")).longValue(), end = ((Number) body.get("end")).longValue();
     Object role = body.get("role");
     if (start < 540 || end > 1320 || start >= end || start % 30 != 0 || end % 30 != 0
         || role == null || !List.of("desk", "general").contains(role))
       fail("근무 시간은 09:00~22:00 사이의 30분 단위입니다.");
-    var person = staff.findById(staffId).filter(Staff::isActive)
-        .orElseThrow(() -> new AppException(400, "재직 중인 근무자를 선택해주세요."));
-    return new ShiftInput(person, day, (int) start, (int) end, ShiftRole.valueOf(((String) role).toUpperCase(Locale.ROOT)));
+    var person = staff.findById(staffId).filter(found -> !active || found.isActive())
+        .orElseThrow(() -> new AppException(400, active ? "재직 중인 근무자를 선택해주세요." : "근무자를 찾을 수 없습니다."));
+    return new ShiftInput(person, (int) start, (int) end, ShiftRole.valueOf(((String) role).toUpperCase(Locale.ROOT)));
   }
 
-  private void apply(Shift shift, ShiftInput input, long exclude) {
-    if (shifts.overlaps(input.day(), input.staff().getId(), input.start(), input.end(), exclude))
+  private void apply(Shift shift, Map<String, Object> body, long exclude) {
+    LocalDate day = day(body.get("day"));
+    if (day.getDayOfWeek().getValue() > 5) fail("평일 날짜를 선택해주세요.");
+    var input = input(body, true);
+    if (shifts.overlaps(day, input.staff().getId(), input.start(), input.end(), exclude))
       throw new AppException(409, "같은 사람의 근무 시간이 겹칩니다.");
     shift.setStaff(input.staff());
-    shift.setDay(input.day());
+    shift.setDay(day);
     shift.setStart(input.start());
     shift.setEnd(input.end());
     shift.setRole(input.role());
@@ -180,7 +161,7 @@ public class ScheduleService {
     actor.requireAdmin();
     lock.acquire();
     var shift = new Shift();
-    apply(shift, input(body), 0);
+    apply(shift, body, 0);
     shifts.save(shift);
     return ok();
   }
@@ -190,7 +171,7 @@ public class ScheduleService {
     actor.requireAdmin();
     lock.acquire();
     var shift = shifts.findById(id).orElseThrow(() -> new AppException(404, "근무를 찾을 수 없습니다."));
-    apply(shift, input(body), id);
+    apply(shift, body, id);
     return ok();
   }
 
@@ -205,26 +186,32 @@ public class ScheduleService {
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object copy(Map<String, Object> body, CurrentUser actor) {
     actor.requireAdmin();
-    LocalDate source = monday(text(body.get("source"), "날짜", 10, true));
     LocalDate target = monday(text(body.get("target"), "날짜", 10, true));
+    boolean overwrite = Boolean.TRUE.equals(body.get("overwrite"));
     lock.acquire();
-    if (shifts.existsByDayGreaterThanEqualAndDayLessThan(target, target.plusDays(7)))
-      throw new AppException(409, "대상 주에 이미 시간표가 있습니다. 기존 근무는 덮어쓰지 않습니다.");
-    var saved = weeks.findByWeek(source).orElseThrow(() -> new AppException(409, "원본 근무 시간표를 먼저 저장해주세요."));
-    var entries = originals.findByScheduleWeekIdOrderByDayAscStartAscIdAsc(saved.getId());
-    if (entries.isEmpty()) fail("복사할 근무가 없습니다.");
-    long offset = ChronoUnit.DAYS.between(source, target);
+    var entries = confirmed.findAllByOrderByWeekdayAscStartAscIdAsc();
+    if (entries.isEmpty()) throw new AppException(409, "확정된 근무 시간표를 먼저 저장해주세요.");
+    var existing = shifts(target, target.plusDays(7));
+    if (!existing.isEmpty()) {
+      if (!overwrite) return Map.of("ok", false, "existing", existing.size());
+      shifts.deleteAllInBatch(existing);
+    }
+    int count = 0, skipped = 0;
     for (var entry : entries) {
-      if (!entry.getStaff().isActive()) fail("원본 주에 퇴직한 근무자가 포함되어 있습니다. 근무자를 확인해주세요.");
+      if (!entry.getStaff().isActive()) {
+        skipped++;
+        continue;
+      }
       var shift = new Shift();
       shift.setStaff(entry.getStaff());
-      shift.setDay(entry.getDay().plusDays(offset));
+      shift.setDay(target.plusDays(entry.getWeekday() - 1));
       shift.setStart(entry.getStart());
       shift.setEnd(entry.getEnd());
       shift.setRole(entry.getRole());
       shifts.save(shift);
+      count++;
     }
-    return Map.of("ok", true, "count", entries.size());
+    return Map.of("ok", true, "count", count, "skipped", skipped);
   }
 
   private List<ShiftResponse> active(List<Shift> entries, ZonedDateTime at) {
@@ -280,5 +267,5 @@ public class ScheduleService {
     return number(value);
   }
 
-  private record ShiftInput(Staff staff, LocalDate day, int start, int end, ShiftRole role) {}
+  private record ShiftInput(Staff staff, int start, int end, ShiftRole role) {}
 }

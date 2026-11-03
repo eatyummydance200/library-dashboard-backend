@@ -3,25 +3,20 @@ package dev.library.schedule;
 import dev.library.staff.Staff;
 
 import jakarta.persistence.*;
-import java.time.LocalDate;
 
 @Entity
-@Table(name = "original_shifts")
-public class OriginalShift {
+@Table(name = "confirmed_shifts")
+public class ConfirmedShift {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "schedule_week_id", nullable = false)
-  private OriginalScheduleWeek scheduleWeek;
-
-  @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "staff_id", nullable = false)
   private Staff staff;
 
-  @Column(name = "day", nullable = false)
-  private LocalDate day;
+  @Column(name = "weekday", nullable = false)
+  private int weekday;
 
   @Column(name = "start_minute", nullable = false)
   private int start;
@@ -33,18 +28,10 @@ public class OriginalShift {
   @Column(name = "role", length = 16, nullable = false)
   private ShiftRole role;
 
-  protected OriginalShift() {}
+  protected ConfirmedShift() {}
 
   public Long getId() {
     return id;
-  }
-
-  public OriginalScheduleWeek getScheduleWeek() {
-    return scheduleWeek;
-  }
-
-  public void setScheduleWeek(OriginalScheduleWeek scheduleWeek) {
-    this.scheduleWeek = scheduleWeek;
   }
 
   public Staff getStaff() {
@@ -55,12 +42,12 @@ public class OriginalShift {
     this.staff = staff;
   }
 
-  public LocalDate getDay() {
-    return day;
+  public int getWeekday() {
+    return weekday;
   }
 
-  public void setDay(LocalDate day) {
-    this.day = day;
+  public void setWeekday(int weekday) {
+    this.weekday = weekday;
   }
 
   public int getStart() {

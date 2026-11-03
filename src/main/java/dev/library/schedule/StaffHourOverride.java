@@ -8,15 +8,11 @@ import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "weekly_hour_overrides", uniqueConstraints = {@UniqueConstraint(columnNames = {"schedule_week_id", "staff_id"})})
-public class WeeklyHourOverride {
+@Table(name = "staff_hour_overrides", uniqueConstraints = {@UniqueConstraint(columnNames = {"staff_id"})})
+public class StaffHourOverride {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
-
-  @ManyToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "schedule_week_id", nullable = false)
-  private OriginalScheduleWeek scheduleWeek;
 
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "staff_id", nullable = false)
@@ -41,18 +37,10 @@ public class WeeklyHourOverride {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
-  protected WeeklyHourOverride() {}
+  protected StaffHourOverride() {}
 
   public Long getId() {
     return id;
-  }
-
-  public OriginalScheduleWeek getScheduleWeek() {
-    return scheduleWeek;
-  }
-
-  public void setScheduleWeek(OriginalScheduleWeek scheduleWeek) {
-    this.scheduleWeek = scheduleWeek;
   }
 
   public Staff getStaff() {
