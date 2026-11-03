@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: ghcr.io/eatyummydance200/library-dashboard:63fa563ae5d82fb2ab83a398c8c4c885cf89f205
+          image: ghcr.io/eatyummydance200/library-dashboard:9c1e7758b6ab23c9f3f168abe18fabd42bc91b40
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
