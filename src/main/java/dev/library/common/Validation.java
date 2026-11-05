@@ -74,6 +74,14 @@ public final class Validation {
     if (year < 2000 || year > 2100 || month < 1 || month > 12) fail("연도와 월을 확인해주세요.");
   }
 
+  /** YYYY-MM -> first day of that month. */
+  public static LocalDate month(Object value, String error) {
+    if (!(value instanceof String text) || !text.matches("[0-9]{4}-[0-9]{2}")) throw new AppException(400, error);
+    int year = Integer.parseInt(text.substring(0, 4)), month = Integer.parseInt(text.substring(5));
+    period(year, month);
+    return LocalDate.of(year, month, 1);
+  }
+
   public static boolean bool(Object v, String error) {
     if (!(v instanceof Boolean)) fail(error);
     return (Boolean) v;

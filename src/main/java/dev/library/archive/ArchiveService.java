@@ -144,11 +144,7 @@ public class ArchiveService {
   }
 
   private static LocalDate month(Object value) {
-    if (!(value instanceof String text) || !text.matches("[0-9]{4}-[0-9]{2}"))
-      throw new AppException(400, "과월호 기준 월을 확인해주세요.");
-    int year = Integer.parseInt(text.substring(0, 4)), month = Integer.parseInt(text.substring(5));
-    period(year, month);
-    return LocalDate.of(year, month, 1);
+    return Validation.month(value, "과월호 기준 월을 확인해주세요.");
   }
 
   private static List<Long> ids(Object value, boolean distinct) {
