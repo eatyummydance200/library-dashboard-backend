@@ -15,6 +15,9 @@ library-dashboard:
   manual:
     # Local folder with manual.md and images/. Empty means no seeding.
     seed-dir: ${MANUAL_SEED_DIR:}
+  slack:
+    # Inquiry notifications. Secret; empty means disabled.
+    webhook-url: ${SLACK_WEBHOOK_URL:}
 
 spring:
   servlet:
