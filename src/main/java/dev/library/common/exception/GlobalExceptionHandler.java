@@ -8,6 +8,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -27,5 +30,15 @@ public class GlobalExceptionHandler {
   })
   ResponseEntity<?> invalid(Exception e) {
     return ResponseEntity.badRequest().body(Map.of("error", "입력값을 확인해주세요."));
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  ResponseEntity<?> uploadTooLarge(Exception e) {
+    return ResponseEntity.status(413).body(Map.of("error", "이미지는 5MB 이하만 올릴 수 있습니다."));
+  }
+
+  @ExceptionHandler({MultipartException.class, MissingServletRequestPartException.class})
+  ResponseEntity<?> invalidUpload(Exception e) {
+    return ResponseEntity.badRequest().body(Map.of("error", "이미지 파일을 확인해주세요."));
   }
 }

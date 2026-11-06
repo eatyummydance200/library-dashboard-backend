@@ -36,6 +36,7 @@ IntelliJ와 `bootRun`은 `.env`를 자동으로 읽지 않는다. 환경변수�
 | `DB_USER` | 운영 필수 DB 계정 |
 | `DB_PASSWORD` | 운영 필수 DB 비밀번호 |
 | `APP_BASE_PATH` | 기본 `/library-dashboard`, `/` + 영문·숫자·밑줄·하이픈 |
+| `MANUAL_SEED_DIR` | `library-dashboard.manual.seed-dir`. 지정하고 매뉴얼 행이 없을 때만 시작 시 `<dir>/manual.md`와 `<dir>/images/*`를 DB에 넣는다. 매뉴얼 본문·이미지는 공개 레포에 넣지 않는다 |
 
 최초 관리자 등록 이후 계정과 근무자는 해당 API에서 등록한다. 계정 생성 API에는 관리자 권한이 필요하다.
 
@@ -61,8 +62,10 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 | `/api/staff`, `/api/teachers`, `/api/duty` | 근무자·선생님·당직 |
 | `/api/issues`, `/api/tagging`, `/api/archive` | 이슈·태깅·과월호 |
 | `/api/users`, `/api/password` | 관리자 계정 관리·비밀번호 변경 |
+| `GET`·`PUT /api/manual` | 근로학생 매뉴얼 `{content, updated_at, updated_by}` 조회(로그인)·저장(관리자, 최대 200,000자) |
+| `POST /api/manual/images`, `GET /api/manual/images/{name}` | 매뉴얼 이미지 업로드(관리자, multipart `file`, PNG·JPEG·GIF·WEBP 5MB 이하, `{name}` 반환)·조회(로그인) |
 
-위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다.
+위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다(매뉴얼 저장 2MB, 이미지 업로드 6MB 예외).
 
 세션은 운영 PostgreSQL에 저장하며 여러 Pod 및 재시작 사이에 공유한다. 로컬 세션은 H2 파일에 저장해 재시작 후에도 유지한다. 유효 기간은 12시간이다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션이 무효화된다. 쿠키 이름은 `library_dashboard_session`, HttpOnly·SameSite=Lax·운영 Secure다. 프론트 프록시는 쿠키와 CSRF 헤더를 전달해야 한다. 별도 CORS 허용은 없다.
 

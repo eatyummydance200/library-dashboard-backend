@@ -11,7 +11,16 @@ server:
     threads:
       max: 20
 
+library-dashboard:
+  manual:
+    # Local folder with manual.md and images/. Empty means no seeding.
+    seed-dir: ${MANUAL_SEED_DIR:}
+
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   jpa:
     open-in-view: false
     hibernate:

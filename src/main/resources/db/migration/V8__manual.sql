@@ -1,0 +1,14 @@
+CREATE TABLE manual (
+  id BIGINT PRIMARY KEY,
+  content VARCHAR(200000) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  updated_by VARCHAR(32) NOT NULL,
+  CHECK (id = 1)
+);
+
+CREATE TABLE manual_images (
+  name VARCHAR(255) PRIMARY KEY,
+  content_type VARCHAR(32) NOT NULL,
+  data BYTEA NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
