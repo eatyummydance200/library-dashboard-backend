@@ -33,7 +33,7 @@ public class ManualController {
     actor.requireAdmin();
     if (file.getSize() > ManualService.MAX_IMAGE)
       return ResponseEntity.status(413).body(Map.of("error", ManualService.TOO_LARGE));
-    return ResponseEntity.status(201).body(service.upload(file.getContentType(), file.getBytes(), actor));
+    return ResponseEntity.status(201).body(service.upload(file.getContentType(), file.getOriginalFilename(), file.getBytes(), actor));
   }
 
   @GetMapping("/api/manual/images/{name}")
