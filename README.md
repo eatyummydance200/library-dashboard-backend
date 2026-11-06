@@ -63,7 +63,7 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 | `/api/issues`, `/api/tagging`, `/api/archive` | 이슈·태깅·과월호 |
 | `/api/users`, `/api/password` | 관리자 계정 관리·비밀번호 변경 |
 | `GET`·`PUT /api/manual` | 근로학생 매뉴얼 `{content, updated_at, updated_by}` 조회(로그인)·저장(관리자, 최대 200,000자) |
-| `POST /api/manual/images`, `GET /api/manual/images/{name}` | 매뉴얼 이미지 업로드(관리자, multipart `file`, PNG·JPEG·GIF·WEBP 5MB 이하, `{name}` 반환)·조회(로그인) |
+| `POST /api/manual/images`, `GET /api/manual/images/{name}` | 매뉴얼 이미지 업로드(관리자, multipart `file`, PNG·JPEG·GIF·WEBP 5MB 이하, `{name}` 반환. 파일 이름이 영문·숫자·`._-`만 쓰고 확장자가 형식과 맞으며 아직 없으면 그 이름을 유지, 아니면 UUID)·조회(로그인) |
 
 위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다(매뉴얼 저장 2MB, 이미지 업로드 6MB 예외).
 

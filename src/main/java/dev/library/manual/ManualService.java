@@ -57,16 +57,28 @@ public class ManualService {
   }
 
   @Transactional(isolation = Isolation.READ_COMMITTED)
-  public Map<String, String> upload(String declaredType, byte[] data, CurrentUser actor) {
+  public Map<String, String> upload(String declaredType, String originalName, byte[] data, CurrentUser actor) {
     actor.requireAdmin();
     if (data.length > MAX_IMAGE) throw new AppException(413, TOO_LARGE);
     String type = sniff(data);
     if (type == null || declaredType == null || !type.equals(declaredType.toLowerCase(Locale.ROOT)))
       fail("PNG, JPEG, GIF, WEBP 이미지만 올릴 수 있습니다.");
-    String name = UUID.randomUUID() + "." + EXTENSIONS.get(type);
     lock.acquire();
+    String kept = keptName(originalName, type);
+    // 본문이 파일 이름(manual-image:p4-1.png)으로 참조할 수 있게 원래 이름을 유지한다.
+    // 안전하지 않거나 이미 있는 이름은 덮어쓰지 않고 UUID로 저장한다.
+    String name = kept != null && !images.existsById(kept) ? kept : UUID.randomUUID() + "." + EXTENSIONS.get(type);
     images.save(new ManualImage(name, type, data, Instant.now()));
     return Map.of("name", name);
+  }
+
+  // 경로를 떼어낸 파일 이름이 허용 문자만 쓰고 확장자가 실제 형식과 맞을 때만 그 이름을 쓴다
+  static String keptName(String originalName, String type) {
+    if (originalName == null) return null;
+    String name = originalName.substring(Math.max(originalName.lastIndexOf('/'), originalName.lastIndexOf('\\')) + 1);
+    int dot = name.lastIndexOf('.');
+    if (!name.matches(NAME) || dot <= 0) return null;
+    return type.equals(SEED_TYPES.get(name.substring(dot + 1).toLowerCase(Locale.ROOT))) ? name : null;
   }
 
   public ManualImage image(String name) {
