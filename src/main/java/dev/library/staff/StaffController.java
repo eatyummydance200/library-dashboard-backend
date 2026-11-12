@@ -15,8 +15,11 @@ public class StaffController {
   }
 
   @GetMapping("/api/staff")
-  Object staff() {
-    return service.staff();
+  Object staff(HttpServletRequest r) {
+    var staff = service.staff();
+    // 보기 전용 계정에는 근무자 연락처를 내보내지 않는다
+    if (!((CurrentUser) r.getAttribute("user")).viewer()) return staff;
+    return staff.stream().map(s -> new StaffResponse(s.id(), s.name(), null, s.active())).toList();
   }
 
   @PostMapping("/api/staff")

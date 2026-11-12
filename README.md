@@ -41,6 +41,8 @@ IntelliJ와 `bootRun`은 `.env`를 자동으로 읽지 않는다. 환경변수�
 
 최초 관리자 등록 이후 계정과 근무자는 해당 API에서 등록한다. 계정 생성 API에는 관리자 권한이 필요하다.
 
+계정 권한은 `admin`·`worker`·`viewer`다. `viewer`(보기 전용)는 조회만 할 수 있다. 로그인·로그아웃 외 쓰기와 `/api/teachers`는 403 "보기 전용 계정입니다."이고, `GET /api/staff`의 `phone`은 `null`로 내려간다.
+
 ```bash
 ./gradlew build
 java -jar build/libs/app.jar
