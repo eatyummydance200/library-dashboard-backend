@@ -47,7 +47,7 @@ public class UserService {
     if (!name.matches("[A-Za-z0-9_.-]{2,32}") || password.length() < 10)
       fail("아이디는 영문·숫자 2~32자, 비밀번호는 10자 이상으로 입력해주세요.");
     Object role = body.getOrDefault("role", "worker");
-    if (role == null || !List.of("admin", "worker").contains(role)) fail("권한을 확인해주세요.");
+    if (role == null || !List.of("admin", "worker", "viewer").contains(role)) fail("권한을 확인해주세요.");
     lock.acquire();
     var user = new User();
     user.setUsername(name);

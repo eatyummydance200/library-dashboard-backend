@@ -60,6 +60,12 @@ class AuthFilter extends OncePerRequestFilter {
               || path.equals("/actuator/health/liveness")
               || path.equals("/actuator/health/readiness");
       if (!publicPath && user == null) throw new AppException(401, "로그인이 필요합니다.");
+      // 보기 전용 계정: 로그아웃 외 쓰기 금지, 인적관리(선생님 연락처) 조회 금지
+      if (user != null && user.viewer()) {
+        boolean read = Set.of("GET", "HEAD", "OPTIONS").contains(request.getMethod());
+        if ((!read && !publicPath && !path.equals("/api/logout")) || path.startsWith("/api/teachers"))
+          throw new AppException(403, "보기 전용 계정입니다.");
+      }
       chain.doFilter(request, response);
     } catch (AppException e) {
       failure(response, e);
