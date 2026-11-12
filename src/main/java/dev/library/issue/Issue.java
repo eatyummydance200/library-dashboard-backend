@@ -16,6 +16,9 @@ public class Issue {
   @Column(name = "day", nullable = false)
   private LocalDate day;
 
+  @Column(name = "end_day", nullable = false)
+  private LocalDate endDay;
+
   @Column(name = "category", length = 16, nullable = false)
   private String category;
 
@@ -50,6 +53,14 @@ public class Issue {
 
   public void setDay(LocalDate day) {
     this.day = day;
+  }
+
+  public LocalDate getEndDay() {
+    return endDay;
+  }
+
+  public void setEndDay(LocalDate endDay) {
+    this.endDay = endDay;
   }
 
   public String getCategory() {

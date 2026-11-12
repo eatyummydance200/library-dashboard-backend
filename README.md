@@ -61,7 +61,8 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 | `GET /api/me`, `POST /api/logout` | 로그인 계정·로그아웃 |
 | `/api/schedule`, `/api/shifts`, `/api/status` | 시간표·근무 구간·현황 |
 | `/api/staff`, `/api/teachers`, `/api/duty` | 근무자·선생님·당직 |
-| `/api/issues`, `/api/tagging`, `/api/archive` | 이슈·태깅·과월호 |
+| `/api/issues` | 이슈. `GET ?day=`·`?week=`·`?category=`는 기간(`day`~`end_day`)이 그 날짜·주와 겹치는 이슈를 최신 등록순 최대 200건 반환. `POST`·`PUT /{id}` 본문 `{day, end_day?, category, title, body}`에서 `day`는 시작일, `end_day`는 종료일(`day` 이상). 생략 시 등록은 `day`와 같게, 수정은 기존 값을 유지하되 새 `day`보다 앞서면 `day`로 맞춤. `PATCH /{id}` `{done}` 완료, `DELETE /{id}` 삭제 |
+| `/api/tagging`, `/api/archive` | 태깅·과월호 |
 | `/api/users`, `/api/password` | 관리자 계정 관리·비밀번호 변경 |
 | `GET`·`PUT /api/manual` | 근로학생 매뉴얼 `{content, updated_at, updated_by}` 조회(로그인)·저장(관리자, 최대 200,000자) |
 | `POST /api/manual/images`, `GET /api/manual/images/{name}` | 매뉴얼 이미지 업로드(관리자, multipart `file`, PNG·JPEG·GIF·WEBP 5MB 이하, `{name}` 반환. 파일 이름이 영문·숫자·`._-`만 쓰고 확장자가 형식과 맞으며 아직 없으면 그 이름을 유지, 아니면 UUID)·조회(로그인) |

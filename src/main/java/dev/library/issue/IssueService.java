@@ -40,11 +40,14 @@ public class IssueService {
     if ("".equals(day)) return List.of();
     Specification<Issue> filter = (root, query, builder) -> {
       var conditions = new ArrayList<Predicate>();
-      if (selectedDay != null) conditions.add(builder.equal(root.get("day"), selectedDay));
+      if (selectedDay != null) {
+        conditions.add(builder.lessThanOrEqualTo(root.get("day"), selectedDay));
+        conditions.add(builder.greaterThanOrEqualTo(root.get("endDay"), selectedDay));
+      }
       if (category != null) conditions.add(builder.equal(root.get("category"), category));
       if (start != null) {
-        conditions.add(builder.greaterThanOrEqualTo(root.get("day"), start));
         conditions.add(builder.lessThan(root.get("day"), start.plusDays(7)));
+        conditions.add(builder.greaterThanOrEqualTo(root.get("endDay"), start));
       }
       return builder.and(conditions.toArray(Predicate[]::new));
     };
@@ -55,6 +58,7 @@ public class IssueService {
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object issue(Map<String, Object> body, CurrentUser actor) {
     LocalDate day = day(body.getOrDefault("day", today()));
+    LocalDate endDay = endDay(body.get("end_day"), day);
     Object category = body.get("category");
     if (category == null || !CATEGORIES.contains(category)) fail("이슈 구분을 확인해주세요.");
     String title = text(body.get("title"), "제목", 80, true);
@@ -62,6 +66,7 @@ public class IssueService {
     lock.acquire();
     var issue = new Issue();
     issue.setDay(day);
+    issue.setEndDay(endDay == null ? day : endDay);
     issue.setCategory((String) category);
     issue.setTitle(title);
     issue.setBody(contents);
@@ -96,6 +101,7 @@ public class IssueService {
   @Transactional(isolation = Isolation.READ_COMMITTED)
   public Object update(long id, Map<String, Object> body, CurrentUser actor) {
     LocalDate day = day(body.get("day"));
+    LocalDate endDay = endDay(body.get("end_day"), day);
     Object category = body.get("category");
     if (category == null || !CATEGORIES.contains(category)) fail("이슈 구분을 확인해주세요.");
     String title = text(body.get("title"), "제목", 80, true);
@@ -105,11 +111,20 @@ public class IssueService {
     if (!"admin".equals(actor.role()) && !issue.getAuthor().getId().equals(actor.id()))
       throw new AppException(403, "작성자나 관리자만 수정할 수 있습니다.");
     if (issue.isDone()) throw new AppException(409, "완료된 이슈는 다시 연 뒤 수정해주세요.");
+    if (endDay == null) endDay = issue.getEndDay().isBefore(day) ? day : issue.getEndDay();
     issue.setDay(day);
+    issue.setEndDay(endDay);
     issue.setCategory((String) category);
     issue.setTitle(title);
     issue.setBody(contents);
     issue.setUpdatedAt(Instant.now());
     return ok();
+  }
+
+  private static LocalDate endDay(Object value, LocalDate day) {
+    if (value == null) return null;
+    LocalDate endDay = day(value);
+    if (endDay.isBefore(day)) fail("종료일은 시작일과 같거나 이후로 선택해주세요.");
+    return endDay;
   }
 }
