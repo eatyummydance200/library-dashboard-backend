@@ -21,7 +21,11 @@ class SecurityHeadersFilter extends OncePerRequestFilter {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'"
             + " data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action"
             + " 'self'; object-src 'none'");
-    response.setHeader("Cache-Control", "no-store");
+    // API 조회는 브라우저가 저장하되 매번 ETag로 재검증한다(안 바뀌면 304, EtagFilter). 나머지는 저장 금지.
+    boolean read = request.getMethod().equals("GET") || request.getMethod().equals("HEAD");
+    response.setHeader(
+        "Cache-Control",
+        read && request.getServletPath().startsWith("/api/") ? "private, no-cache" : "no-store");
     chain.doFilter(request, response);
   }
 }
