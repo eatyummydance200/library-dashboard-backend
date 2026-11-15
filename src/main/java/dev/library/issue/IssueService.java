@@ -21,7 +21,7 @@ import jakarta.persistence.criteria.Predicate;
 @Service
 @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class IssueService {
-  private static final List<String> CATEGORIES = List.of("인계", "공지", "시설");
+  private static final List<String> CATEGORIES = List.of("인계", "공지", "분실물", "시설"); // 시설: 예전 구분(기존 이슈 수정용)
   private final IssueRepository repository;
   private final UserRepository users;
   private final WriteLock lock;
