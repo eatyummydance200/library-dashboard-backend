@@ -15,9 +15,15 @@ library-dashboard:
   manual:
     # Local folder with manual.md and images/. Empty means no seeding.
     seed-dir: ${MANUAL_SEED_DIR:}
+  regulations:
+    # Local folder with regulations.md. Empty means no seeding.
+    seed-dir: ${REGULATIONS_SEED_DIR:}
   slack:
-    # Inquiry notifications. Secret; empty means disabled.
+    # Inquiry and chatbot-flag notifications. Secret; empty means disabled.
     webhook-url: ${SLACK_WEBHOOK_URL:}
+  anthropic:
+    # Phone chatbot. Secret; empty means the chatbot answers 503.
+    api-key: ${ANTHROPIC_API_KEY:}
 
 spring:
   servlet:

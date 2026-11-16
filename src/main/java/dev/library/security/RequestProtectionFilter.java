@@ -29,9 +29,10 @@ class RequestProtectionFilter extends OncePerRequestFilter {
               expected.getBytes(StandardCharsets.UTF_8),
               supplied.getBytes(StandardCharsets.UTF_8)))
         throw new AppException(403, "요청이 만료되었습니다. 새로고침 후 다시 시도해주세요.");
-      // Manual body (200,000 chars) and image upload need more than the default 64KB.
+      // Manual/regulations body (200,000 chars) and image upload need more than the default 64KB.
       boolean upload = path.equals("/api/manual/images");
-      long limit = upload ? 6 * 1024 * 1024 : path.equals("/api/manual") ? 2 * 1024 * 1024 : 65536;
+      boolean document = path.equals("/api/manual") || path.equals("/api/regulations");
+      long limit = upload ? 6 * 1024 * 1024 : document ? 2 * 1024 * 1024 : 65536;
       if (request.getContentLengthLong() > limit) throw new AppException(413, "요청 내용이 너무 큽니다.");
       // Multipart is parsed from the original stream; spring.servlet.multipart limits its size.
       if (path.startsWith("/api/") && !upload) {
