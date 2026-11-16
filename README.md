@@ -37,7 +37,19 @@ IntelliJ와 `bootRun`은 `.env`를 자동으로 읽지 않는다. 환경변수�
 | `DB_PASSWORD` | 운영 필수 DB 비밀번호 |
 | `APP_BASE_PATH` | 기본 `/library-dashboard`, `/` + 영문·숫자·밑줄·하이픈 |
 | `MANUAL_SEED_DIR` | `library-dashboard.manual.seed-dir`. 지정하고 매뉴얼 행이 없을 때만 시작 시 `<dir>/manual.md`와 `<dir>/images/*`를 DB에 넣는다. 매뉴얼 본문·이미지는 공개 레포에 넣지 않는다 |
-| `SLACK_WEBHOOK_URL` | 문의 등록 알림용 Slack Incoming Webhook. 비면 전송 안 함. 비밀값 |
+| `REGULATIONS_SEED_DIR` | `library-dashboard.regulations.seed-dir`. 지정하고 규정 행이 없을 때만 시작 시 `<dir>/regulations.md`를 DB에 넣는다(`updated_by`는 `seed`). 규정 본문은 공개 레포에 넣지 않는다 |
+| `SLACK_WEBHOOK_URL` | 문의 등록·챗봇 "문제가 있어요" 표시 알림용 Slack Incoming Webhook. 비면 전송 안 함. 비밀값 |
+| `ANTHROPIC_API_KEY` | 전화 응대 챗봇(Claude Haiku 5.5)용 키. 비어 있어도 앱은 정상 기동하고 질문 API만 503을 반환한다. 비밀값이며 로그에 남기지 않는다 |
+
+시드 폴더는 레포 밖 작업 폴더에 둔다(`manual-seed/`, `regulations-seed/`). 로컬에서는 `bootRun` 전에 셸에서 지정한다. 상대경로는 백엔드 폴더 기준이다. `workspace/library-dashboard-backend/`와 `worktrees/backend-<이름>/`은 깊이가 같아서 둘 다 `..\..\regulations-seed`로 지정한다. 시드는 행이 없을 때 한 번만 들어가고 H2 파일에 남으므로, 그 뒤 실행에는 필요 없다.
+
+```powershell
+$env:MANUAL_SEED_DIR = '..\..\manual-seed'
+$env:REGULATIONS_SEED_DIR = '..\..\regulations-seed'
+.\gradlew.bat bootRun
+```
+
+운영 Deployment에는 시드 폴더 볼륨과 `*_SEED_DIR` 값이 없다. 운영 규정은 매뉴얼처럼 빈 상태로 배포하고, 관리자가 규정 탭(`PUT /api/regulations`)에서 붙여 넣어 저장한다.
 
 최초 관리자 등록 이후 계정과 근무자는 해당 API에서 등록한다. 계정 생성 API에는 관리자 권한이 필요하다.
 
@@ -69,8 +81,12 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 | `GET`·`PUT /api/manual` | 근로학생 매뉴얼 `{content, updated_at, updated_by}` 조회(로그인)·저장(관리자, 최대 200,000자) |
 | `POST /api/manual/images`, `GET /api/manual/images/{name}` | 매뉴얼 이미지 업로드(관리자, multipart `file`, PNG·JPEG·GIF·WEBP 5MB 이하, `{name}` 반환. 파일 이름이 영문·숫자·`._-`만 쓰고 확장자가 형식과 맞으며 아직 없으면 그 이름을 유지, 아니면 UUID)·조회(로그인) |
 | `/api/inquiries` | 개발자 문의 `POST {category,title,body}` 등록(로그인, DB 저장 후 Slack 알림). `category`는 `feature`·`improvement`·`bug`·`other`. 조회 API는 없다 |
+| `GET`·`PUT /api/regulations` | 전화 응대 규정 `{content, updated_at, updated_by}` 조회(로그인, 없으면 `{content:"", updated_at:null, updated_by:null}`)·저장(관리자, 1~200,000자) |
+| `POST /api/regulations/questions` | 챗봇 질문 `{question}`(1~500자, 관리자·근로학생). 201 `{id, outcome, answer, sections, extensions:[{number, place}], today_count, warn}`. `outcome`은 `answered`·`not_found`·`refused`. 같은 계정의 오늘(KST) 질문이 100회를 넘으면 `warn`이 `true`가 되지만 막지는 않는다. 키 없음·규정 없음·키 오류는 503, 응답 실패·잘림은 502이며 실패한 호출은 기록하지 않는다 |
+| `PATCH /api/regulations/questions/{id}` | `{flagged?, note?, resolved?}`. `flagged`는 본인 질문 또는 관리자, `resolved`는 관리자만 바꾼다. `flagged:true`는 표시 시각·메모(500자 이하)를 저장하고 커밋 후 Slack으로 알린다. `flagged:false`는 표시·메모·보완 완료를 지운다. 기록 1건 반환 |
+| `GET /api/regulations/questions?filter=` | 질문 기록(관리자). `filter`는 `flagged`(기본)·`not_found`(규정에 없음·거절)·`all`이다. `{summary:{today_count, month_count, month_cost_usd}, items}`를 미해결 먼저, 최신순으로 최대 200건 반환한다. 비용은 참고값 |
 
-위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다(매뉴얼 저장 2MB, 이미지 업로드 6MB 예외).
+위 경로 앞에는 `/library-dashboard`를 붙인다. 로그인 본문은 `{"username":"...","password":"..."}`다. 모든 쓰기는 세션 쿠키와 `X-CSRF-Token`을 사용한다. 로그인 후 새 토큰을 사용한다. 미인증은 JSON 401, 권한·CSRF 오류는 403, 충돌은 409다. 요청 본문은 최대 64KB다(매뉴얼·규정 저장 2MB, 이미지 업로드 6MB 예외).
 
 세션은 운영 PostgreSQL에 저장하며 여러 Pod 및 재시작 사이에 공유한다. 로컬 세션은 H2 파일에 저장해 재시작 후에도 유지한다. 유효 기간은 12시간이다. 비밀번호·계정 상태·근무자 연결 변경 시 기존 세션이 무효화된다. 쿠키 이름은 `library_dashboard_session`, HttpOnly·SameSite=Lax·운영 Secure다. 프론트 프록시는 쿠키와 CSRF 헤더를 전달해야 한다. 별도 CORS 허용은 없다.
 
@@ -81,6 +97,7 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 - 업무상의 `desk` 근무 역할은 유지한다. 제거 대상은 앱 배포 관리 기능이다.
 - 과월호는 재직 근무자 7명에게 배정한다. 담당 변경 시 항목 ID·완료 상태·완료자·시각을 보존한다. 근무자는 본인 담당만 완료 처리한다.
 - Flyway가 `src/main/resources/db/migration`의 버전별 SQL을 적용한다. 적용된 SQL은 수정하지 않고 새 버전을 추가한다.
+- 챗봇 질문 기록은 영구 보관하며 자동 삭제하지 않는다. Claude 호출(타임아웃 25초, 재시도 1회)은 DB 트랜잭션과 쓰기 잠금 밖에서 하고, 기록 저장만 짧은 트랜잭션으로 한다.
 - Service의 `@Transactional`이 업무 단위 트랜잭션을 관리한다. 조회는 read-only·repeatable read, 쓰기는 read committed다. 작은 팀을 기준으로 PostgreSQL advisory transaction lock이 Pod 사이의 쓰기를 보호한다. 파일 H2의 쓰기 잠금도 메서드 반환 시점이 아니라 커밋·롤백까지 유지한다.
 
 ## Kubernetes
@@ -91,7 +108,7 @@ Gradle 빌드는 컴파일·패키징을 확인하며 API 동작을 자동 검�
 main에 push하면 CI가 이미지를 GHCR에 게시하고 `k8s/deployment.yaml`의 image 태그를 커밋 SHA로 바꿔 커밋한다.
 Argo CD가 이 변경을 감지해 반영한다. Application 정의는 `argocd/application.yaml`이다.
 
-Secret `library-dashboard`(`DB_URL`, `DB_USER`, `DB_PASSWORD`)와 `app-metrics`(`token`)는 클러스터에서 직접 관리한다.
+Secret `library-dashboard`(`DB_URL`, `DB_USER`, `DB_PASSWORD`, 선택 `SLACK_WEBHOOK_URL`·`ANTHROPIC_API_KEY`)와 `app-metrics`(`token`)는 클러스터에서 직접 관리한다.
 
 Deployment 2 replicas, ClusterIP Service 8080(호스트 프록시용 고정 IP `10.96.20.10`), 지표 Service 8081이다. 읽기 전용 루트 파일시스템, UID 10001, 임시 `/tmp` 볼륨, 리소스 제한을 포함한다. 30초 종료 유예 중 Spring은 최대 20초간 진행 중 요청을 마무리한다.
 
@@ -125,7 +142,7 @@ AUDIT.md                         개편 전 리뷰와 조치 결과
 ## 코드 구조
 
 `auth`, `user`, `staff`, `teacher`, `schedule`, `duty`, `issue`, `inquiry`, `tagging`, `archive`,
-`health` 패키지 안에서 계층을 나눈다.
+`regulation`(규정·전화 응대 챗봇), `health` 패키지 안에서 계층을 나눈다.
 
 | 계층 | 책임 |
 | --- | --- |

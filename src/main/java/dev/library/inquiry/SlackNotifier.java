@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 @Component
-class SlackNotifier {
+public class SlackNotifier {
   private static final Logger log = LoggerFactory.getLogger(SlackNotifier.class);
   private final URI webhook;
   private final RestClient client;
@@ -37,12 +37,12 @@ class SlackNotifier {
       return uri;
     } catch (Exception e) {
       // Never log the URL or the parser message: the URL is the secret.
-      log.warn("Slack webhook URL is invalid; inquiry notifications are disabled");
+      log.warn("Slack webhook URL is invalid; Slack notifications are disabled");
       return null;
     }
   }
 
-  void sendAfterCommit(Map<String, Object> payload) {
+  public void sendAfterCommit(Map<String, Object> payload) {
     if (webhook == null) return;
     TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
       @Override
@@ -64,7 +64,7 @@ class SlackNotifier {
     }
   }
 
-  static String escape(String s) {
+  public static String escape(String s) {
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 }
